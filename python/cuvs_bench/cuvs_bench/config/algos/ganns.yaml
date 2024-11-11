@@ -1,0 +1,10 @@
+name: ganns
+constraints:
+  build: cuvs_bench.config.algos.constraints.ganns_build
+  search: cuvs_bench.config.algos.constraints.ganns_search
+groups:
+  base:
+    build:
+      hierarchical: [True]
+      num_of_candidates: [512]
+      num_of_initial_neighbors: [64]

@@ -43,6 +43,9 @@ cuvs_mg_cagra:
 ggnn:
   executable: GGNN_ANN_BENCH
   requires_gpu: true
+ganns:
+  executable: GANNS_ANN_BENCH
+  requires_gpu: true
 hnswlib:
   executable: HNSWLIB_ANN_BENCH
   requires_gpu: false

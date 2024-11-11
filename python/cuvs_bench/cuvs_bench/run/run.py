@@ -180,6 +180,8 @@ def load_algorithms_conf(
     """
     algos_conf = {}
     for algo_f in algos_conf_fs:
+        if algo_f == '__pycache__':
+            continue
         try:
             algo = load_yaml_file(algo_f)
         except Exception as e:
@@ -347,7 +349,7 @@ def get_build_path(executable: str) -> Optional[str]:
     build_path = os.getenv("CUVS_HOME")
     if build_path:
         build_path = os.path.join(
-            build_path, "cpp", "build", "release", executable
+            build_path, "cpp", "build", "bench", "ann", executable
         )
         if os.path.exists(build_path):
             print(f"-- Using RAFT bench from repository in {build_path}.")

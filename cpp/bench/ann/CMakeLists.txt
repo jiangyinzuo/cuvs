@@ -32,6 +32,7 @@ option(CUVS_ANN_BENCH_USE_CUVS_BRUTE_FORCE "Include cuVS brute force knn in benc
 option(CUVS_ANN_BENCH_USE_CUVS_CAGRA_HNSWLIB "Include cuVS CAGRA with HNSW search in benchmark" ON)
 option(CUVS_ANN_BENCH_USE_HNSWLIB "Include hnsw algorithm in benchmark" ON)
 option(CUVS_ANN_BENCH_USE_GGNN "Include ggnn algorithm in benchmark" OFF)
+option(CUVS_ANN_BENCH_USE_GANNS "Include ganns algorithm in benchmark" ON)
 option(CUVS_ANN_BENCH_USE_CUVS_MG "Include cuVS ann mg algorithm in benchmark" ${BUILD_MG_ALGOS})
 option(CUVS_ANN_BENCH_SINGLE_EXE
        "Make a single executable with benchmark as shared library modules" OFF
@@ -55,6 +56,7 @@ if(BUILD_CPU_ONLY)
   set(CUVS_ANN_BENCH_USE_CUVS_BRUTE_FORCE OFF)
   set(CUVS_ANN_BENCH_USE_CUVS_CAGRA_HNSWLIB OFF)
   set(CUVS_ANN_BENCH_USE_GGNN OFF)
+  set(CUVS_ANN_BENCH_USE_GANNS OFF)
   set(CUVS_KNN_BENCH_USE_CUVS_BRUTE_FORCE OFF)
   set(CUVS_ANN_BENCH_USE_CUVS_MG OFF)
 else()
@@ -85,6 +87,10 @@ include(cmake/thirdparty/get_nlohmann_json)
 if(CUVS_ANN_BENCH_USE_GGNN)
   include(cmake/thirdparty/get_ggnn)
 endif()
+
+# if(CUVS_ANN_BENCH_USE_GANNS)
+#   include(cmake/thirdparty/get_ganns)
+# endif()
 
 if(CUVS_ANN_BENCH_USE_FAISS)
   include(cmake/thirdparty/get_faiss)
@@ -294,6 +300,12 @@ if(CUVS_ANN_BENCH_USE_GGNN)
   include(cmake/thirdparty/get_glog)
   ConfigureAnnBench(
     NAME GGNN PATH src/ggnn/ggnn_benchmark.cu LINKS glog::glog ggnn::ggnn CUDA::curand
+  )
+endif()
+
+if(CUVS_ANN_BENCH_USE_GANNS)
+  ConfigureAnnBench(
+    NAME GANNS PATH src/ganns/ganns_benchmark.cu LINKS CUDA::curand
   )
 endif()
 

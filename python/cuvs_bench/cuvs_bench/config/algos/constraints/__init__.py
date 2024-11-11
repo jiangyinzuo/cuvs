@@ -99,3 +99,18 @@ def faiss_gpu_ivf_pq_search(params, build_params, k, batch_size):
 def hnswlib_search(params, build_params, k, batch_size):
     if "ef" in params:
         return params["ef"] >= k
+
+
+###############################################################################
+#                               ganns constraints                             #
+###############################################################################
+
+
+def ganns_build(params, dims):
+    return dims <= 960
+
+
+def ganns_search(params, build_params, k, batch_size):
+    if "num_of_candidates" in build_params:
+        return build_params["num_of_candidates"] >= k
+    return False
