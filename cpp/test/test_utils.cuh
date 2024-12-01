@@ -21,21 +21,40 @@
 #include <gtest/gtest.h>
 #include <iostream>
 #include <memory>
+#include <raft/core/detail/macros.hpp>
 #include <raft/random/rng.cuh>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
 #include <rmm/exec_policy.hpp>
 #include <thrust/for_each.h>
 
+#include <cassert>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
-#include <utility>
 #include <vector>
 
 namespace cuvs {
+
+extern "C" {
+extern __host__ __device__ void __assertfail(const char* __assertion,
+                                             const char* __file,
+                                             unsigned int __line,
+                                             const char* __function,
+                                             size_t charsize);
+}
+
+#define CUDA_KERNEL_ASSERT(e) \
+  ((e) ? static_cast<void>(0) \
+       : __assertfail(#e, __FILE__, __LINE__, __PRETTY_FUNCTION__, sizeof(char)))
+
+#define CUDA_KERNEL_ASSERT_MSG(e, fmt, ...)                                  \
+  if (!(e)) {                                                                \
+    printf(fmt, __VA_ARGS__);                                                \
+    __assertfail(#e, __FILE__, __LINE__, __PRETTY_FUNCTION__, sizeof(char)); \
+  }
 
 /*
  * @brief Helper function to compare 2 device n-D arrays with custom comparison
@@ -326,5 +345,4 @@ inline std::vector<float> read_csv(std::string filename, bool skip_first_n_colum
   myFile.close();
   return result;
 }
-
 };  // end namespace cuvs

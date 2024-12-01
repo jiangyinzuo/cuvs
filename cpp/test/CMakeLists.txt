@@ -245,6 +245,17 @@ if(BUILD_TESTS)
   ConfigureTest(
     NAME STATS_TEST PATH stats/trustworthiness.cu stats/silhouette_score.cu GPUS 1 PERCENT 100
   )
+
+  ConfigureTest(
+    NAME
+    HNSW_GPU_TEST
+    PATH
+    neighbors/hnsw_gpu.cu
+    GPUS
+    1
+    PERCENT
+    100
+  )
 endif()
 
 if(TARGET cuvs::c_api)
