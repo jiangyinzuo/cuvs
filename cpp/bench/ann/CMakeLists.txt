@@ -33,6 +33,7 @@ option(CUVS_ANN_BENCH_USE_CUVS_CAGRA_HNSWLIB "Include cuVS CAGRA with HNSW searc
 option(CUVS_ANN_BENCH_USE_HNSWLIB "Include hnsw algorithm in benchmark" ON)
 option(CUVS_ANN_BENCH_USE_GGNN "Include ggnn algorithm in benchmark" OFF)
 option(CUVS_ANN_BENCH_USE_GANNS "Include ganns algorithm in benchmark" ON)
+option(CUVS_ANN_BENCH_USE_CUHNSW "Include cuhnsw algorithm in benchmark" ON)
 option(CUVS_ANN_BENCH_USE_CUVS_MG "Include cuVS ann mg algorithm in benchmark" ${BUILD_MG_ALGOS})
 option(CUVS_ANN_BENCH_SINGLE_EXE
        "Make a single executable with benchmark as shared library modules" OFF
@@ -57,6 +58,7 @@ if(BUILD_CPU_ONLY)
   set(CUVS_ANN_BENCH_USE_CUVS_CAGRA_HNSWLIB OFF)
   set(CUVS_ANN_BENCH_USE_GGNN OFF)
   set(CUVS_ANN_BENCH_USE_GANNS OFF)
+  set(CUVS_ANN_BENCH_USE_CUHNSW OFF)
   set(CUVS_KNN_BENCH_USE_CUVS_BRUTE_FORCE OFF)
   set(CUVS_ANN_BENCH_USE_CUVS_MG OFF)
 else()
@@ -92,6 +94,10 @@ endif()
 #   include(cmake/thirdparty/get_ganns)
 # endif()
 
+# if(CUVS_ANN_BENCH_USE_CUHNSW)
+  # include(cmake/thirdparty/get_cuhnsw)
+# endif()
+
 if(CUVS_ANN_BENCH_USE_FAISS)
   include(cmake/thirdparty/get_faiss)
 endif()
@@ -102,7 +108,7 @@ endif()
 function(ConfigureAnnBench)
 
   set(oneValueArgs NAME)
-  set(multiValueArgs PATH LINKS CXXFLAGS)
+  set(multiValueArgs PATH LINKS CXXFLAGS INCLUDES)
 
   if(NOT BUILD_CPU_ONLY)
     set(GPU_BUILD ON)
@@ -306,6 +312,20 @@ endif()
 if(CUVS_ANN_BENCH_USE_GANNS)
   ConfigureAnnBench(
     NAME GANNS PATH src/ganns/ganns_benchmark.cu LINKS CUDA::curand
+  )
+endif()
+
+if(CUVS_ANN_BENCH_USE_CUHNSW)
+  include(cmake/thirdparty/get_json11)
+  ConfigureAnnBench(
+    NAME CUHNSW
+    PATH
+    src/cuhnsw/cuhnsw_benchmark.cu
+    src/cuhnsw/src/cuhnsw_base.cu
+    src/cuhnsw/src/cuhnsw_build.cu
+    src/cuhnsw/src/log.cc
+    LINKS json11 CUDA::curand spdlog::spdlog_header_only
+    INCLUDES src/cuhnsw/include/
   )
 endif()
 

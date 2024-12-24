@@ -4,6 +4,33 @@ dataset:
   name: glove-100-inner
   query_file: glove-100-inner/query.fbin
 index:
+- algo: cuhnsw
+  build_param:
+    max_m: 24
+    max_m0: 32
+    ef_construction: 256
+    heuristic_coef: 0.0
+    save_remains: False
+    block_dim: 32
+    hyper_threads: 100
+    visited_table_size: 16384
+    visited_list_size: 8192
+    reverse_cand: False
+    log_level: 2
+  file: index/glove-100-inner/cuhnsw/max_m24
+  name: cuhnsw.max_m24
+  search_params:
+  - ef: 10
+  - ef: 20
+  - ef: 40
+  - ef: 60
+  - ef: 80
+  - ef: 120
+  - ef: 200
+  - ef: 400
+  - ef: 600
+  - ef: 800
+  search_result_file: result/glove-100-inner/cuhnsw/max_m24
 - algo: hnswlib
   build_param:
     M: 12
