@@ -327,6 +327,12 @@ if(CUVS_ANN_BENCH_USE_CUHNSW)
     LINKS json11 CUDA::curand spdlog::spdlog_header_only
     INCLUDES src/cuhnsw/include/
   )
+  ConfigureAnnBench(
+    NAME CUHNSW_V2
+    PATH
+    src/cuhnsw_v2/cuhnsw_v2_benchmark.cu
+    LINKS CUDA::curand cuvs
+  )
 endif()
 
 # ##################################################################################################
