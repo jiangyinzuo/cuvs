@@ -49,6 +49,9 @@ ganns:
 cuhnsw:
   executable: CUHNSW_ANN_BENCH
   requires_gpu: true
+cuhnsw_v2:
+  executable: CUHNSW_V2_ANN_BENCH
+  requires_gpu: true
 hnswlib:
   executable: HNSWLIB_ANN_BENCH
   requires_gpu: false

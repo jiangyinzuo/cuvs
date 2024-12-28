@@ -1,0 +1,19 @@
+name: cuhnsw_v2
+constraints:
+  search: cuvs_bench.config.algos.constraints.cuhnsw_search
+groups:
+  base:
+    build:
+      max_m: [24]
+      max_m0: [32]
+      ef_construction: [256]
+      heuristic_coef: [0.0]
+      save_remains: [False]
+      block_dim: [32]
+      hyper_threads: [100]
+      visited_table_size: [16384]
+      visited_list_size: [8192]
+      reverse_cand: [False]
+      log_level: [2]
+    search:
+      ef_search: [10, 20, 40, 60, 80, 120, 200, 400, 600, 800]

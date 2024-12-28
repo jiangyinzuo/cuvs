@@ -388,6 +388,8 @@ if(BUILD_SHARED_LIBS)
     src/neighbors/cagra_serialize_half.cu
     src/neighbors/cagra_serialize_int8.cu
     src/neighbors/cagra_serialize_uint8.cu
+    src/neighbors/cuhnsw_v2/cuhnsw_base.cu
+    src/neighbors/cuhnsw_v2/cuhnsw_build.cu
     src/neighbors/iface/iface_cagra_float_uint32_t.cu
     src/neighbors/iface/iface_cagra_half_uint32_t.cu
     src/neighbors/iface/iface_cagra_int8_t_uint32_t.cu

@@ -5,23 +5,17 @@
 // LICENSE file in the root directory of this source tree.
 #include <algorithm>
 #include <iostream>
+#include <numeric>
+#include <raft/core/logger-macros.hpp>
+#include <raft/util/cuda_rt_essentials.hpp>
+#include <set>
+#include <vector>
 
 #include "cuda_build_kernels.cuh"
 #include "cuda_search_kernels.cuh"
-#include "cuhnsw.hpp"
+#include "cuvs/neighbors/cuhnsw_v2.hpp"
 
-namespace cuhnsw {
-
-void CuHNSW::GetDeviceInfo()
-{
-  CHECK_CUDA(cudaGetDevice(&devId_));
-  cudaDeviceProp prop;
-  CHECK_CUDA(cudaGetDeviceProperties(&prop, devId_));
-  mp_cnt_ = prop.multiProcessorCount;
-  major_  = prop.major;
-  minor_  = prop.minor;
-  cores_  = -1;
-}
+namespace cuhnsw_v2 {
 
 void CuHNSW::GetEntryPoints(const std::vector<int>& nodes,
                             std::vector<int>& entries,
@@ -82,14 +76,14 @@ void CuHNSW::GetEntryPoints(const std::vector<int>& nodes,
     visited_list_size_,
     thrust::raw_pointer_cast(dev_entries.data()),
     thrust::raw_pointer_cast(dev_acc_visited_cnt.data()));
-  CHECK_CUDA(cudaDeviceSynchronize());
+  RAFT_CUDA_TRY(cudaDeviceSynchronize());
   // el_[GPU] += sw_[GPU].CheckPoint();
   thrust::copy(dev_entries.begin(), dev_entries.end(), entries.begin());
   std::vector<int64_t> acc_visited_cnt(block_cnt_);
   thrust::copy(dev_acc_visited_cnt.begin(), dev_acc_visited_cnt.end(), acc_visited_cnt.begin());
-  CHECK_CUDA(cudaDeviceSynchronize());
+  RAFT_CUDA_TRY(cudaDeviceSynchronize());
   int64_t full_visited_cnt = std::accumulate(acc_visited_cnt.begin(), acc_visited_cnt.end(), 0);
-  DEBUG("full visited cnt: {}", full_visited_cnt);
+  RAFT_LOG_DEBUG("full visited cnt: %d", full_visited_cnt);
 
   // set output
   for (int i = 0; i < size; ++i) {
@@ -101,7 +95,7 @@ void CuHNSW::BuildGraph()
 {
   // visited_ = new bool[batch_size_ * num_data_];
   for (int level = max_level_; level >= 0; --level) {
-    DEBUG("build graph of level: {}", level);
+    RAFT_LOG_DEBUG("build graph of level: %d", level);
     BuildLevelGraph(level);
   }
 }
@@ -192,7 +186,7 @@ void CuHNSW::BuildLevelGraph(int level)
     thrust::raw_pointer_cast(device_backup_neighbors.data()),
     thrust::raw_pointer_cast(device_backup_distances.data()),
     thrust::raw_pointer_cast(device_went_through_heuristic.data()));
-  CHECK_CUDA(cudaDeviceSynchronize());
+  RAFT_CUDA_TRY(cudaDeviceSynchronize());
   thrust::copy(device_deg.begin(), device_deg.end(), deg.begin());
   thrust::copy(device_graph.begin(), device_graph.end(), graph_vec.begin());
   std::vector<float> distances(max_m * size);
@@ -201,9 +195,9 @@ void CuHNSW::BuildLevelGraph(int level)
   std::vector<int64_t> acc_visited_cnt(block_cnt_);
   thrust::copy(
     device_acc_visited_cnt.begin(), device_acc_visited_cnt.end(), acc_visited_cnt.begin());
-  CHECK_CUDA(cudaDeviceSynchronize());
+  RAFT_CUDA_TRY(cudaDeviceSynchronize());
   int64_t full_visited_cnt = std::accumulate(acc_visited_cnt.begin(), acc_visited_cnt.end(), 0LL);
-  DEBUG("full number of visited nodes: {}", full_visited_cnt);
+  RAFT_LOG_DEBUG("full number of visited nodes: %d", full_visited_cnt);
 
   for (auto& node : graph.GetNodes()) {
     graph.ClearEdges(node);
@@ -296,17 +290,17 @@ void CuHNSW::SearchGraph(const float* qdata,
     thrust::raw_pointer_cast(device_neighbors.data()),
     global_cand_nodes_ptr,
     global_cand_distances_ptr);
-  CHECK_CUDA(cudaGetLastError());
-  CHECK_CUDA(cudaDeviceSynchronize());
+  RAFT_CUDA_TRY(cudaGetLastError());
+  RAFT_CUDA_TRY(cudaDeviceSynchronize());
   std::vector<int64_t> acc_visited_cnt(block_cnt_);
   thrust::copy(
     device_acc_visited_cnt.begin(), device_acc_visited_cnt.end(), acc_visited_cnt.begin());
   thrust::copy(device_nns.begin(), device_nns.end(), nns);
   thrust::copy(device_distances.begin(), device_distances.end(), distances);
   thrust::copy(device_found_cnt.begin(), device_found_cnt.end(), found_cnt);
-  CHECK_CUDA(cudaDeviceSynchronize());
+  RAFT_CUDA_TRY(cudaDeviceSynchronize());
   int64_t full_visited_cnt = std::accumulate(acc_visited_cnt.begin(), acc_visited_cnt.end(), 0LL);
-  DEBUG("full number of visited nodes: {}", full_visited_cnt);
+  RAFT_LOG_DEBUG("full number of visited nodes: {}", full_visited_cnt);
   if (labelled_)
     for (int i = 0; i < num_queries * topk; ++i)
       nns[i] = labels_[nns[i]];
@@ -315,4 +309,4 @@ void CuHNSW::SearchGraph(const float* qdata,
   device_qdata_.shrink_to_fit();
 }
 
-}  // namespace cuhnsw
+}  // namespace cuhnsw_v2

@@ -390,7 +390,7 @@ void bench_search(::benchmark::State& state,
       out_offset += n_queries;
       batch_offset = (batch_offset + queries_stride) % query_set_size;
     }
-    std::cout << "match_count: " << match_count << ", total_count: " << total_count << std::endl;
+    // std::cout << "match_count: " << match_count << ", total_count: " << total_count << std::endl;
     double actual_recall = static_cast<double>(match_count) / static_cast<double>(total_count);
     state.counters.insert({"Recall", {actual_recall, benchmark::Counter::kAvgThreads}});
   }
