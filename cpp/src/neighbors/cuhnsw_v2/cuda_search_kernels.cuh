@@ -22,8 +22,7 @@ __global__ void GetEntryPointsKernel(const cuda_scalar* qdata,
                                      bool* visited,
                                      int* visited_list,
                                      const int visited_list_size,
-                                     int* entries,
-                                     int64_t* acc_visited_cnt)
+                                     int* entries)
 {
   static __shared__ int visited_cnt;
   bool* _visited     = visited + num_target_nodes * blockIdx.x;
@@ -74,7 +73,6 @@ __global__ void GetEntryPointsKernel(const cuda_scalar* qdata,
     }
 
     __syncthreads();
-    if (threadIdx.x == 0) { acc_visited_cnt[blockIdx.x] += visited_cnt; }
     for (int j = threadIdx.x; j < visited_cnt; j += blockDim.x) {
       _visited[_visited_list[j]] = false;
     }
@@ -102,7 +100,6 @@ __global__ void SearchGraphKernel(const cuda_scalar* qdata,
                                   int* visited_list,
                                   const int visited_table_size,
                                   const int visited_list_size,
-                                  int64_t* acc_visited_cnt,
                                   const bool reverse_cand,
                                   Neighbor<NeighborIdxT>* neighbors,
                                   NeighborIdxT* global_cand_nodes,
@@ -110,9 +107,9 @@ __global__ void SearchGraphKernel(const cuda_scalar* qdata,
 {
   static __shared__ int size;
 
-  Neighbor<NeighborIdxT>* ef_search_pq      = neighbors + ef_search * blockIdx.x;
-  NeighborIdxT* cand_nodes    = global_cand_nodes + ef_search * blockIdx.x;
-  cuda_scalar* cand_distances = global_cand_distances + ef_search * blockIdx.x;
+  Neighbor<NeighborIdxT>* ef_search_pq = neighbors + ef_search * blockIdx.x;
+  NeighborIdxT* cand_nodes             = global_cand_nodes + ef_search * blockIdx.x;
+  cuda_scalar* cand_distances          = global_cand_distances + ef_search * blockIdx.x;
 
   static __shared__ int visited_cnt;
   int* _visited_table = visited_table + visited_table_size * blockIdx.x;
@@ -168,7 +165,6 @@ __global__ void SearchGraphKernel(const cuda_scalar* qdata,
       idx = GetCand(ef_search_pq, size, reverse_cand);
     }
     __syncthreads();
-    if (threadIdx.x == 0) { acc_visited_cnt[blockIdx.x] += visited_cnt; }
 
     for (int j = threadIdx.x; j < visited_cnt; j += blockDim.x) {
       _visited_table[_visited_list[j]] = -1;

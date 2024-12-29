@@ -140,8 +140,7 @@ class CuHNSW {
  private:
   void GetEntryPoints(const cuda_scalar* qdata,
                       const std::vector<int>& nodes,
-                      std::vector<int>& entries,
-                      int level);
+                      std::vector<int>& entries);
   void SearchAtLayer(const std::vector<int>& queries,
                      std::vector<std::deque<std::pair<float, int>>>& entries,
                      int level,

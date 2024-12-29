@@ -178,7 +178,6 @@ __global__ void BuildLevelGraphKernel(const cuda_scalar* data,
                                       const int visited_table_size,
                                       const int visited_list_size,
                                       int* mutex,
-                                      int64_t* acc_visited_cnt,
                                       const bool reverse_cand,
                                       Neighbor<NeighborIdxT>* neighbors,
                                       NeighborIdxT* global_cand_nodes,
@@ -273,7 +272,6 @@ __global__ void BuildLevelGraphKernel(const cuda_scalar* data,
     }
 
     __syncthreads();
-    if (threadIdx.x == 0) { acc_visited_cnt[blockIdx.x] += visited_cnt; }
     for (int j = threadIdx.x; j < visited_cnt; j += blockDim.x) {
       _visited_table[_visited_list[j]] = -1;
     }
