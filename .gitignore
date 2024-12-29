@@ -82,4 +82,8 @@ ivf_pq_index
 
 # cuvs_bench
 datasets/
-/*.json
+*.json
+
+*.vim
+.gdbinit
+*.png
