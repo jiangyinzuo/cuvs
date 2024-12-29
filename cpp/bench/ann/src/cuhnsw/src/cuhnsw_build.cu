@@ -4,6 +4,7 @@
 // This source code is licensed under the Apache 2.0 license found in the
 // LICENSE file in the root directory of this source tree.
 #include <algorithm>
+#include <chrono>
 #include <iostream>
 
 #include "cuda_build_kernels.cuh"
@@ -11,6 +12,8 @@
 #include "cuhnsw.hpp"
 
 namespace cuhnsw {
+
+// #define _CLK_BREAKDOWN
 
 void CuHNSW::GetDeviceInfo()
 {
@@ -226,6 +229,10 @@ void CuHNSW::SearchGraph(const float* qdata,
                          float* distances,
                          int* found_cnt)
 {
+#ifdef _CLK_BREAKDOWN
+  const auto search_graph_start = std::chrono::high_resolution_clock::now();
+#endif
+
   device_qdata_.resize(num_queries * num_dims_);
 #ifdef HALF_PRECISION
   std::vector<cuda_scalar> hdata(num_queries * num_dims_);
@@ -238,8 +245,9 @@ void CuHNSW::SearchGraph(const float* qdata,
   std::vector<int> qnodes(num_queries);
   std::iota(qnodes.begin(), qnodes.end(), 0);
   std::vector<int> entries(num_queries, enter_point_);
-  for (int l = max_level_; l > 0; --l)
+  for (int l = max_level_; l > 0; --l) {
     GetEntryPoints(qnodes, entries, l, true);
+  }
   std::vector<int> graph_vec(max_m0_ * num_data_);
   std::vector<int> deg(num_data_);
   LevelGraph graph = level_graphs_[0];
@@ -315,4 +323,5 @@ void CuHNSW::SearchGraph(const float* qdata,
   device_qdata_.shrink_to_fit();
 }
 
+#undef _CLK_BREAKDOWN
 }  // namespace cuhnsw
