@@ -11,7 +11,8 @@ namespace cuhnsw_v2 {
 
 // pop and push for heap
 // reference: https://github.com/NVlabs/nvbio/blob/master/nvbio/basic/priority_queue_inline.h
-__inline__ __device__ void PqPop(Neighbor* pq, int* size)
+template <typename NeighborIdxT>
+__inline__ __device__ void PqPop(Neighbor<NeighborIdxT>* pq, int* size)
 {
   if (threadIdx.x != 0) return;
   if (*size == 0) return;
@@ -29,7 +30,9 @@ __inline__ __device__ void PqPop(Neighbor* pq, int* size)
   pq[p] = pq[*size];
 }
 
-__inline__ __device__ void PqPush(Neighbor* pq, int* size, float dist, int nodeid, bool check)
+template <typename NeighborIdxT>
+__inline__ __device__ void PqPush(
+  Neighbor<NeighborIdxT>* pq, int* size, float dist, NeighborIdxT nodeid, bool check)
 {
   if (threadIdx.x != 0) return;
   int idx = *size;

@@ -82,6 +82,7 @@ __global__ void GetEntryPointsKernel(const cuda_scalar* qdata,
   }
 }
 
+template <typename NeighborIdxT>
 __global__ void SearchGraphKernel(const cuda_scalar* qdata,
                                   const int num_qnodes,
                                   const cuda_scalar* data,
@@ -94,7 +95,7 @@ __global__ void SearchGraphKernel(const cuda_scalar* qdata,
                                   const int* graph,
                                   const int* deg,
                                   const int topk,
-                                  int* nns,
+                                  NeighborIdxT* nns,
                                   float* distances,
                                   int* found_cnt,
                                   int* visited_table,
@@ -103,14 +104,14 @@ __global__ void SearchGraphKernel(const cuda_scalar* qdata,
                                   const int visited_list_size,
                                   int64_t* acc_visited_cnt,
                                   const bool reverse_cand,
-                                  Neighbor* neighbors,
-                                  int* global_cand_nodes,
+                                  Neighbor<NeighborIdxT>* neighbors,
+                                  NeighborIdxT* global_cand_nodes,
                                   cuda_scalar* global_cand_distances)
 {
   static __shared__ int size;
 
-  Neighbor* ef_search_pq      = neighbors + ef_search * blockIdx.x;
-  int* cand_nodes             = global_cand_nodes + ef_search * blockIdx.x;
+  Neighbor<NeighborIdxT>* ef_search_pq      = neighbors + ef_search * blockIdx.x;
+  NeighborIdxT* cand_nodes    = global_cand_nodes + ef_search * blockIdx.x;
   cuda_scalar* cand_distances = global_cand_distances + ef_search * blockIdx.x;
 
   static __shared__ int visited_cnt;

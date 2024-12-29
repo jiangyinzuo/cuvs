@@ -10,7 +10,10 @@
 #include "cuvs/neighbors/cuhnsw_v2_types.hpp"
 namespace cuhnsw_v2 {
 
-__inline__ __device__ int warp_reduce_cand(const Neighbor* pq, int cand, const bool reverse)
+template <typename NeighborIdxT>
+__inline__ __device__ int warp_reduce_cand(const Neighbor<NeighborIdxT>* pq,
+                                           int cand,
+                                           const bool reverse)
 {
 #if __CUDACC_VER_MAJOR__ >= 9
   unsigned int active = __activemask();
@@ -44,7 +47,11 @@ __inline__ __device__ int warp_reduce_cand(const Neighbor* pq, int cand, const b
 #endif
   return cand;
 }
-__inline__ __device__ bool CheckAlreadyExists(const Neighbor* pq, const int size, const int nodeid)
+
+template <typename NeighborIdxT>
+__inline__ __device__ bool CheckAlreadyExists(const Neighbor<NeighborIdxT>* pq,
+                                              const int size,
+                                              const NeighborIdxT nodeid)
 {
   __syncthreads();
   // figure out the warp/ position inside the warp
@@ -86,7 +93,11 @@ __inline__ __device__ bool CheckAlreadyExists(const Neighbor* pq, const int size
   __syncthreads();
   return shared[0];
 }
-__inline__ __device__ int GetCand(const Neighbor* pq, const int size, const bool reverse)
+
+template <typename NeighborIdxT>
+__inline__ __device__ int GetCand(const Neighbor<NeighborIdxT>* pq,
+                                  const int size,
+                                  const bool reverse)
 {
   __syncthreads();
 
@@ -127,14 +138,15 @@ __inline__ __device__ int GetCand(const Neighbor* pq, const int size, const bool
   return shared[0];
 }
 
-__inline__ __device__ void PushNodeToPq(Neighbor* pq,
+template <typename NeighborIdxT>
+__inline__ __device__ void PushNodeToPq(Neighbor<NeighborIdxT>* pq,
                                         int* size,
                                         const int max_size,
                                         const cuda_scalar* data,
                                         const int num_dims,
                                         const int dist_type,
-                                        const int srcid,
-                                        const int dstid,
+                                        const NeighborIdxT srcid,
+                                        const NeighborIdxT dstid,
                                         const int* nodes)
 {
   if (srcid == dstid) return;
@@ -150,12 +162,13 @@ __inline__ __device__ void PushNodeToPq(Neighbor* pq,
   __syncthreads();
 }
 
-__inline__ __device__ void PushNodeToPq2(Neighbor* pq,
+template <typename NeighborIdxT>
+__inline__ __device__ void PushNodeToPq2(Neighbor<NeighborIdxT>* pq,
                                          int* size,
                                          const int max_size,
                                          const cuda_scalar dist,
-                                         const int srcid,
-                                         const int dstid,
+                                         const NeighborIdxT srcid,
+                                         const NeighborIdxT dstid,
                                          const int* nodes)
 {
   if (srcid == dstid) return;
@@ -201,14 +214,15 @@ __inline__ __device__ bool CheckVisited(int* visited_table,
   return ret;
 }
 
-__inline__ __device__ void PushNodeToSearchPq(Neighbor* pq,
+template <typename NeighborIdxT>
+__inline__ __device__ void PushNodeToSearchPq(Neighbor<NeighborIdxT>* pq,
                                               int* size,
                                               const int max_size,
                                               const cuda_scalar* data,
                                               const int num_dims,
                                               const int dist_type,
                                               const cuda_scalar* src_vec,
-                                              const int dstid)
+                                              const NeighborIdxT dstid)
 {
   if (CheckAlreadyExists(pq, *size, dstid)) return;
   const cuda_scalar* dst_vec = data + num_dims * dstid;

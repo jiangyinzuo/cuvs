@@ -115,8 +115,9 @@ __inline__ __device__ cuda_scalar GetDistanceByVec(const cuda_scalar* src_vec,
   return dist;
 }
 
-__inline__ __device__ cuda_scalar GetDistance(const int srcid,
-                                              const int dstid,
+template <typename NeighborIdxT>
+__inline__ __device__ cuda_scalar GetDistance(const NeighborIdxT srcid,
+                                              const NeighborIdxT dstid,
                                               const int num_dims,
                                               const int dist_type,
                                               const int* nodes,

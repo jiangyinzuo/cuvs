@@ -16,13 +16,35 @@
 #pragma once
 
 #include "../common/ann_types.hpp"
+#include "../common/cuda_huge_page_resource.hpp"
+#include "../common/cuda_pinned_resource.hpp"
 #include "../common/util.hpp"
+#include "../cuvs/cuvs_ann_bench_utils.h"
 
 #include "cuvs/neighbors/cuhnsw_v2.hpp"
 #include <memory>
+#include <raft/core/device_resources.hpp>
+#include <raft/linalg/unary_op.cuh>
+#include <raft/util/cudart_utils.hpp>
 #include <random>
+#include <rmm/device_uvector.hpp>
+#include <rmm/resource_ref.hpp>
 
 namespace cuvs::bench {
+
+enum class AllocatorType { kHostPinned, kHostHugePage, kDevice };
+
+inline auto allocator_to_string(AllocatorType mem_type) -> std::string
+{
+  if (mem_type == AllocatorType::kDevice) {
+    return "device";
+  } else if (mem_type == AllocatorType::kHostPinned) {
+    return "host_pinned";
+  } else if (mem_type == AllocatorType::kHostHugePage) {
+    return "host_huge_page";
+  }
+  return "<invalid allocator type>";
+}
 
 class cuhnsw_impl;
 
@@ -44,8 +66,11 @@ class cuhnsw : public algo<float>, public algo_gpu {
   };
 
   using search_param_base = typename algo<float>::search_param;
+
   struct search_param : public search_param_base {
     int ef_search;
+    AllocatorType graph_mem   = AllocatorType::kDevice;
+    AllocatorType dataset_mem = AllocatorType::kDevice;
     [[nodiscard]] auto needs_dataset() const -> bool override { return true; }
   };
 
@@ -121,8 +146,8 @@ class cuhnsw_impl : public algo<float>, public algo_gpu {
   [[nodiscard]] auto get_preference() const -> algo_property override
   {
     algo_property property;
-    property.dataset_memory_type = MemoryType::kHost;
-    property.query_memory_type   = MemoryType::kHost;
+    property.dataset_memory_type = MemoryType::kHostMmap;
+    property.query_memory_type   = MemoryType::kDevice;
     return property;
   }
 
@@ -139,6 +164,13 @@ class cuhnsw_impl : public algo<float>, public algo_gpu {
       default: throw std::runtime_error("unsupported metric");
     }
   }
+  // handle_ must go first to make sure it dies last and all memory allocated in pool
+  configured_raft_resources handle_{};
+  raft::mr::cuda_pinned_resource mr_pinned_;
+  raft::mr::cuda_huge_page_resource mr_huge_page_;
+  AllocatorType graph_mem_{AllocatorType::kDevice};
+  AllocatorType dataset_mem_{AllocatorType::kDevice};
+
   using algo<float>::metric_;
   using algo<float>::dim_;
 
@@ -149,6 +181,15 @@ class cuhnsw_impl : public algo<float>, public algo_gpu {
   cudaStream_t stream_;
   const float* base_dataset_ = nullptr;
   size_t base_n_rows_        = 0;
+
+  inline rmm::device_async_resource_ref get_mr(AllocatorType mem_type)
+  {
+    switch (mem_type) {
+      case (AllocatorType::kHostPinned): return &mr_pinned_;
+      case (AllocatorType::kHostHugePage): return &mr_huge_page_;
+      default: return rmm::mr::get_current_device_resource();
+    }
+  }
 };
 
 cuhnsw::cuhnsw(Metric metric, int dim, const build_param& param) : algo<float>(metric, dim)
@@ -221,17 +262,26 @@ void cuhnsw_impl::search(const float* queries,
                          algo_base::index_type* neighbors,
                          float* distances) const
 {
-  int* nns       = new int[batch_size * k];
-  int* found_cnt = new int[batch_size];
-  cuhnsw_->SearchGraph(queries, batch_size, k, search_param_.ef_search, nns, distances, found_cnt);
+  raft::ASSERT_DEVICE_MEM(neighbors, "neighbors");
+  auto& tmp_buf = get_tmp_buffer_from_global_pool((k + 1) * batch_size);
+  cuhnsw_v2::CuHNSW::NeighborIdxT* nns =
+    reinterpret_cast<cuhnsw_v2::CuHNSW::NeighborIdxT*>(tmp_buf.data(MemoryType::kDevice));
+  int* found_cnt = reinterpret_cast<int*>(nns) + batch_size * k;
+
+  auto queries_v =
+    raft::make_device_matrix_view<const float, algo_base::index_type>(queries, batch_size, dim_);
+  auto nns_v =
+    raft::make_device_matrix_view<cuhnsw_v2::CuHNSW::NeighborIdxT, algo_base::index_type>(
+      nns, batch_size, k);
+  auto found_cnt_v = raft::make_device_vector_view<int>(found_cnt, batch_size);
+  cuhnsw_->SearchGraph(
+    queries_v, batch_size, k, search_param_.ef_search, nns_v, distances, found_cnt_v);
   // std::cout << "batch: " << batch_size << " k: " << k << std::endl;
-  for (int i = 0; i < batch_size; ++i) {
-    for (int j = 0; j < k; ++j) {
-      neighbors[i * k + j] = nns[i * k + j];
-    }
-  }
-  delete[] nns;
-  delete[] found_cnt;
+  raft::linalg::unaryOp(neighbors,
+                        nns_v.data_handle(),
+                        batch_size * k,
+                        raft::cast_op<algo_base::index_type>(),
+                        raft::resource::get_cuda_stream(handle_));
 }
 
 void cuhnsw_impl::save(const std::string& file) const { cuhnsw_->SaveIndex(file); }
