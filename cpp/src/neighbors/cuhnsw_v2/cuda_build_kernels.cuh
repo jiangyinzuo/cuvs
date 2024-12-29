@@ -58,9 +58,10 @@ __inline__ __device__ bool IsNeighbor(const int* graph, const int deg, const int
   return shared[0];
 }
 
-__inline__ __device__ void SearchHeuristic(Neighbor* ef_const_pq,
+template <typename NeighborIdxT>
+__inline__ __device__ void SearchHeuristic(Neighbor<NeighborIdxT>* ef_const_pq,
                                            int* size,
-                                           const int srcid,
+                                           const NeighborIdxT srcid,
                                            const int* nodes,
                                            const cuda_scalar* data,
                                            const int dist_type,
@@ -68,13 +69,13 @@ __inline__ __device__ void SearchHeuristic(Neighbor* ef_const_pq,
                                            const int ef_construction,
                                            const int max_m,
                                            const bool save_remains,
-                                           int* cand_nodes,
+                                           NeighborIdxT* cand_nodes,
                                            cuda_scalar* cand_distances,
-                                           int* graph,
+                                           NeighborIdxT* graph,
                                            float* distances,
                                            int* deg,
                                            const float heuristic_coef,
-                                           const int new_comer = -1)
+                                           const NeighborIdxT new_comer = -1)
 {
   int size2 = *size;
   __syncthreads();
@@ -101,7 +102,7 @@ __inline__ __device__ void SearchHeuristic(Neighbor* ef_const_pq,
   // https://github.com/kakao/n2/blob/36888c3869ac478d896d0921ac64f21930d85659/src/heuristic.cc#L42
   const int nn_num = max_m * heuristic_coef;
 
-  int* _graph             = graph + srcid * max_m;
+  NeighborIdxT* _graph    = graph + srcid * max_m;
   float* _distances       = distances + srcid * max_m;
   bool new_comer_inserted = false;
   // search heuristic
@@ -160,6 +161,7 @@ __inline__ __device__ void SearchHeuristic(Neighbor* ef_const_pq,
   __syncthreads();
 }
 
+template <typename NeighborIdxT>
 __global__ void BuildLevelGraphKernel(const cuda_scalar* data,
                                       const int* nodes,
                                       const int num_dims,
@@ -168,7 +170,7 @@ __global__ void BuildLevelGraphKernel(const cuda_scalar* data,
                                       const int dist_type,
                                       const bool save_remains,
                                       const int ef_construction,
-                                      int* graph,
+                                      NeighborIdxT* graph,
                                       float* distances,
                                       int* deg,
                                       int* visited_table,
@@ -178,8 +180,8 @@ __global__ void BuildLevelGraphKernel(const cuda_scalar* data,
                                       int* mutex,
                                       int64_t* acc_visited_cnt,
                                       const bool reverse_cand,
-                                      Neighbor* neighbors,
-                                      int* global_cand_nodes,
+                                      Neighbor<NeighborIdxT>* neighbors,
+                                      NeighborIdxT* global_cand_nodes,
                                       cuda_scalar* global_cand_distances,
                                       const float heuristic_coef,
                                       int* backup_neighbors,
@@ -194,11 +196,11 @@ __global__ void BuildLevelGraphKernel(const cuda_scalar* data,
   int* _backup_neighbors         = backup_neighbors + max_m * blockIdx.x;
   cuda_scalar* _backup_distances = backup_distances + max_m * blockIdx.x;
 
-  Neighbor* ef_const_pq       = neighbors + ef_construction * blockIdx.x;
-  int* cand_nodes             = global_cand_nodes + ef_construction * blockIdx.x;
-  cuda_scalar* cand_distances = global_cand_distances + ef_construction * blockIdx.x;
-  int* _visited_table         = visited_table + visited_table_size * blockIdx.x;
-  int* _visited_list          = visited_list + visited_list_size * blockIdx.x;
+  Neighbor<NeighborIdxT>* ef_const_pq = neighbors + ef_construction * blockIdx.x;
+  NeighborIdxT* cand_nodes            = global_cand_nodes + ef_construction * blockIdx.x;
+  cuda_scalar* cand_distances         = global_cand_distances + ef_construction * blockIdx.x;
+  int* _visited_table                 = visited_table + visited_table_size * blockIdx.x;
+  int* _visited_list                  = visited_list + visited_list_size * blockIdx.x;
 
   for (int i = blockIdx.x; i < num_nodes; i += gridDim.x) {
     if (threadIdx.x == 0) {

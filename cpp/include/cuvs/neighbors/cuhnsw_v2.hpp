@@ -106,6 +106,7 @@ class LevelGraph {
 
 class CuHNSW {
  public:
+  using NeighborIdxT = int;
   CuHNSW();
   ~CuHNSW();
 
@@ -128,19 +129,19 @@ class CuHNSW {
   void BuildGraph();
   void SaveIndex(std::string fpath);
   void LoadIndex(std::string fpath);
-  void SearchGraph(const float* qdata,
+  void SearchGraph(raft::device_matrix_view<const float, int64_t, raft::row_major> queries,
                    const int num_queries,
                    const int topk,
                    const int ef_search,
-                   int* nns,
+                   raft::device_matrix_view<NeighborIdxT, int64_t, raft::row_major> neighbors,
                    float* distances,
-                   int* found_cnt);
+                   raft::device_vector_view<int> found_cnt);
 
  private:
-  void GetEntryPoints(const std::vector<int>& nodes,
+  void GetEntryPoints(const cuda_scalar* qdata,
+                      const std::vector<int>& nodes,
                       std::vector<int>& entries,
-                      int level,
-                      bool search);
+                      int level);
   void SearchAtLayer(const std::vector<int>& queries,
                      std::vector<std::deque<std::pair<float, int>>>& entries,
                      int level,
@@ -155,7 +156,7 @@ class CuHNSW {
 
   // int num_data_, num_dims_, batch_size_;
   int num_data_, num_dims_;
-  thrust::device_vector<cuda_scalar> device_data_, device_qdata_;
+  thrust::device_vector<cuda_scalar> device_data_;
   const float* data_;
   std::vector<int> labels_;
   bool labelled_     = false;
