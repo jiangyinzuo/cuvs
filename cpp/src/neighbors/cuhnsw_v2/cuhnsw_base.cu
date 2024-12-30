@@ -3,13 +3,17 @@
 //
 // This source code is licensed under the Apache 2.0 license found in the
 // LICENSE file in the root directory of this source tree.
+#include <cmath>
 #include <cuda_runtime_api.h>
+#include <curand_kernel.h>
 #include <fstream>
 #include <numeric>
+#include <raft/core/detail/macros.hpp>
 #include <raft/core/logger-macros.hpp>
 #include <raft/util/cuda_rt_essentials.hpp>
 
 #include "cuvs/neighbors/cuhnsw_v2.hpp"
+#include <cub/cub.cuh>
 
 namespace cuhnsw_v2 {
 
@@ -71,7 +75,13 @@ CuHNSW::CuHNSW() : cores_(-1)
     cores_);
 }
 
-CuHNSW::~CuHNSW() {}
+CuHNSW::~CuHNSW()
+{
+  if (d_states_ != nullptr) {
+    cudaFree(d_states_);
+    d_states_ = nullptr;
+  }
+}
 
 bool CuHNSW::Init(int max_m,
                   int max_m0,
@@ -139,6 +149,78 @@ void CuHNSW::SetData(const float* data, int num_data, int num_dims)
   data_ = data;
 }
 
+template <typename T>
+RAFT_DEVICE_INLINE_FUNCTION void cub_inclusive_sum(const T input, T& output)
+{
+  switch (blockDim.x) {
+    case 32: {
+      typedef cub::BlockScan<T, 32> BlockScanT;
+      __shared__ typename BlockScanT::TempStorage temp_storage;
+      BlockScanT(temp_storage).InclusiveSum(input, output);
+    } break;
+    case 64: {
+      typedef cub::BlockScan<T, 64> BlockScanT;
+      __shared__ typename BlockScanT::TempStorage temp_storage;
+      BlockScanT(temp_storage).InclusiveSum(input, output);
+    } break;
+    case 128: {
+      typedef cub::BlockScan<T, 128> BlockScanT;
+      __shared__ typename BlockScanT::TempStorage temp_storage;
+      BlockScanT(temp_storage).InclusiveSum(input, output);
+    } break;
+    case 256: {
+      typedef cub::BlockScan<T, 256> BlockScanT;
+      __shared__ typename BlockScanT::TempStorage temp_storage;
+      BlockScanT(temp_storage).InclusiveSum(input, output);
+    } break;
+    case 512: {
+      typedef cub::BlockScan<T, 512> BlockScanT;
+      __shared__ typename BlockScanT::TempStorage temp_storage;
+      BlockScanT(temp_storage).InclusiveSum(input, output);
+    } break;
+    case 1024: {
+      typedef cub::BlockScan<T, 1024> BlockScanT;
+      __shared__ typename BlockScanT::TempStorage temp_storage;
+      BlockScanT(temp_storage).InclusiveSum(input, output);
+    } break;
+    default: break;
+  }
+}
+
+__global__ void initCurand(curandState* state, unsigned long seed)
+{
+  int idx = threadIdx.x + blockIdx.x * blockDim.x;
+  curand_init(seed, idx, 0, &state[idx]);
+}
+
+__global__ void generateRandomLevels(curandState* state,
+                                     PositionType* positions,
+                                     const size_t n_rows,
+                                     const float level_mult)
+{
+  for (auto idx = threadIdx.x + blockIdx.x * blockDim.x; idx < n_rows;
+       idx += blockDim.x * gridDim.x) {
+    float f        = curand_uniform(&state[idx]);  // range: [0, 1]
+    f              = std::max(f, 1e-10f);
+    auto level     = static_cast<PositionType>(-logf(f) * level_mult);
+    positions[idx] = level;
+    cub_inclusive_sum(positions, positions, n_rows);
+  }
+}
+
+void CuHNSW::SetRandomLevels()
+{
+  if (d_states_ == nullptr) {
+    RAFT_LOG_DEBUG("allocate random states");
+    RAFT_CUDA_TRY(cudaMalloc(&d_states_, block_cnt_ * block_dim_ * sizeof(curandState)));
+  }
+  initCurand<<<block_cnt_, block_dim_>>>(d_states_, 1234);
+
+  float level_mult = 1.0f / std::log(max_m_);
+  generateRandomLevels<<<block_cnt_, block_dim_>>>(d_states_, d_levels_, num_data_, level_mult);
+  RAFT_CUDA_TRY(cudaDeviceSynchronize());
+}
+
 void CuHNSW::SetRandomLevels(const int* levels)
 {
   levels_.resize(num_data_);
@@ -161,9 +243,9 @@ void CuHNSW::SetRandomLevels(const int* levels)
   }
   level_graphs_.clear();
   for (int i = 0; i <= max_level_; ++i) {
-    LevelGraph graph = LevelGraph();
+    LevelGraph graph;
     graph.SetNodes(level_nodes[i], num_data_, ef_construction_);
-    level_graphs_.push_back(graph);
+    level_graphs_.push_back(std::move(graph));
   }
 }
 

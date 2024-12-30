@@ -5,6 +5,8 @@
 // LICENSE file in the root directory of this source tree.
 #pragma once
 
+#include <curand_kernel.h>
+#include <raft/core/device_mdarray.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/logger.hpp>
 #include <thrust/binary_search.h>
@@ -44,6 +46,22 @@ static void readBinaryPOD(std::istream& in, T& podRef)
 {
   in.read(reinterpret_cast<char*>(&podRef), sizeof(T));
 }
+
+class Vertex {
+ public:
+  // data (fixed size)
+  // label
+  // neighbors num_neighbors
+};
+
+// Take place of LevelGraph
+class DeviceGraphV1 {
+ public:
+ private:
+  static_assert(sizeof(Vertex*) == 8);
+  // internel id -> Vertex*
+  raft::device_vector<Vertex*> vertices_;
+};
 
 class LevelGraph {
  public:
@@ -126,6 +144,7 @@ class CuHNSW {
             int log_level);
   void SetData(const float* data, int num_data, int num_dims);
   void SetRandomLevels(const int* levels);
+  void SetRandomLevels();
   void BuildGraph();
   void SaveIndex(std::string fpath);
   void LoadIndex(std::string fpath);
@@ -148,6 +167,7 @@ class CuHNSW {
                               int level,
                               int max_m,
                               bool postprocess);
+  curandState* d_states_ = nullptr;
   std::vector<LevelGraph> level_graphs_;
   std::vector<int> levels_;
 

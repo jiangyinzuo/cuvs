@@ -23,7 +23,7 @@ void CuHNSW::GetEntryPoints(QueryDataAccessor qdata_accessor, std::vector<int>& 
     int size = qdata_accessor.size();
 
     // process input data for kernel
-    LevelGraph& graph                   = level_graphs_[level];
+    auto& graph                         = level_graphs_[level];
     const std::vector<int>& upper_nodes = graph.GetNodes();
     int upper_size                      = upper_nodes.size();
     std::vector<int> deg(upper_size);
@@ -35,10 +35,6 @@ void CuHNSW::GetEntryPoints(QueryDataAccessor qdata_accessor, std::vector<int>& 
       for (int j = 0; j < deg[i]; ++j) {
         neighbors[offset + j] = graph.GetNodeId(_neighbors[j].second);
       }
-    }
-    for (int i = 0; i < size; ++i) {
-      int entryid = graph.GetNodeId(entries[i]);
-      entries[i]  = entryid;
     }
 
     // copy to gpu mem
@@ -72,13 +68,6 @@ void CuHNSW::GetEntryPoints(QueryDataAccessor qdata_accessor, std::vector<int>& 
                                    visited_list_size_,
                                    thrust::raw_pointer_cast(dev_entries.data()));
     RAFT_CUDA_TRY(cudaDeviceSynchronize());
-    // el_[GPU] += sw_[GPU].CheckPoint();
-    thrust::copy(dev_entries.begin(), dev_entries.end(), entries.begin());
-
-    // set output
-    for (int i = 0; i < size; ++i) {
-      entries[i] = upper_nodes[entries[i]];
-    }
   }
 }
 
