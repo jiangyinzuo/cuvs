@@ -138,9 +138,8 @@ class CuHNSW {
                    raft::device_vector_view<int> found_cnt);
 
  private:
-  void GetEntryPoints(const cuda_scalar* qdata,
-                      const std::vector<int>& nodes,
-                      std::vector<int>& entries);
+  template <class QueryDataAccessor>
+  void GetEntryPoints(QueryDataAccessor qdata_accessor, std::vector<int>& entries);
   void SearchAtLayer(const std::vector<int>& queries,
                      std::vector<std::deque<std::pair<float, int>>>& entries,
                      int level,
