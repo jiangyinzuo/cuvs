@@ -4,6 +4,90 @@ dataset:
   name: glove-100-inner
   query_file: glove-100-inner/query.fbin
 index:
+- algo: ggnn
+  build_param:
+    k_build: 24
+    segment_size: 32
+    num_layers: 4
+    tau_build: 0.5
+    refine_iterations: 2
+    # GGNN requires to know k during building
+    k_query: 10
+  file: index/glove-100-inner/ggnn/k_build24
+  name: ggnn.k_build24
+  # search_params:
+  # - tau_query: 0.09
+  #   block_dim: 32
+  #   max_iterations: 400
+  #   cache_size: 512
+  #   sorted_size: 256
+  # - tau_query: 0.12
+  #   block_dim: 32
+  #   max_iterations: 400
+  #   cache_size: 512
+  #   sorted_size: 256
+  # - tau_query: 0.18
+  #   block_dim: 32
+  #   max_iterations: 400
+  #   cache_size: 512
+  #   sorted_size: 256
+  # - tau_query: 0.25
+  #   block_dim: 32
+  #   max_iterations: 400
+  #   cache_size: 512
+  #   sorted_size: 256
+  # - tau_query: 0.5
+  #   block_dim: 32
+  #   max_iterations: 400
+  #   cache_size: 512
+  #   sorted_size: 256
+  # - tau_query: 0.8
+  #   block_dim: 32
+  #   max_iterations: 400
+  #   cache_size: 512
+  #   sorted_size: 256
+  # - tau_query: 0.95
+  #   block_dim: 32
+  #   max_iterations: 400
+  #   cache_size: 512
+  #   sorted_size: 256
+  #
+  # - tau_query: 0.09
+  #   block_dim: 128
+  #   max_iterations: 2000
+  #   cache_size: 1024
+  #   sorted_size: 32
+  # - tau_query: 0.12
+  #   block_dim: 128
+  #   max_iterations: 2000
+  #   cache_size: 1024
+  #   sorted_size: 32
+  # - tau_query: 0.18
+  #   block_dim: 128
+  #   max_iterations: 2000
+  #   cache_size: 1024
+  #   sorted_size: 32
+  # - tau_query: 0.25
+  #   block_dim: 128
+  #   max_iterations: 2000
+  #   cache_size: 1024
+  #   sorted_size: 32
+  # - tau_query: 0.5
+  #   block_dim: 128
+  #   max_iterations: 2000
+  #   cache_size: 1024
+  #   sorted_size: 32
+  # - tau_query: 0.8
+  #   block_dim: 128
+  #   max_iterations: 2000
+  #   cache_size: 1024
+  #   sorted_size: 32
+  # - tau_query: 0.95
+  #   block_dim: 128
+  #   max_iterations: 2000
+  #   cache_size: 1024
+  #   sorted_size: 32
+  search_result_file: result/glove-100-inner/ggnn/k_build24
 - algo: cuhnsw
   build_param:
     max_m: 24

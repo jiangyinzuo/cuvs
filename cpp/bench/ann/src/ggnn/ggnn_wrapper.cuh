@@ -18,6 +18,7 @@
 
 #include "../common/ann_types.hpp"
 #include "../common/util.hpp"
+#include "ggnn/utils/cuda_knn_constants.cuh"
 
 // #include <raft/util/cudart_utils.hpp>
 
@@ -38,14 +39,14 @@ class ggnn : public algo<T>, public algo_gpu {
     int k_build{24};       // KBuild
     int segment_size{32};  // S
     int num_layers{4};     // L
-    float tau{0.5};
+    float tau_build{0.5};
     int refine_iterations{2};
     int k;  // GGNN requires to know k during building
   };
 
   using search_param_base = typename algo<T>::search_param;
   struct search_param : public search_param_base {
-    float tau;
+    float tau_query;
     int block_dim{32};
     int max_iterations{400};
     int cache_size{512};
@@ -104,6 +105,12 @@ ggnn<T>::ggnn(Metric metric, int dim, const build_param& param) : algo<T>(metric
   } else if (metric == Metric::kInnerProduct && dim == 96 && param.k_build == 24 && param.k == 10 &&
              param.segment_size == 32) {
     impl_ = std::make_shared<ggnn_impl<T, Cosine, 96, 24, 10, 32>>(metric, dim, param);
+  } else if (metric == Metric::kEuclidean && dim == 100 && param.k_build == 24 &&
+             param.k == 10 && param.segment_size == 32) {
+    impl_ = std::make_shared<ggnn_impl<T, Euclidean, 100, 24, 10, 32>>(metric, dim, param);
+  } else if (metric == Metric::kInnerProduct && dim == 100 && param.k_build == 24 &&
+             param.k == 10 && param.segment_size == 32) {
+    impl_ = std::make_shared<ggnn_impl<T, Cosine, 100, 24, 10, 32>>(metric, dim, param);
   } else if (metric == Metric::kInnerProduct && dim == 96 && param.k_build == 96 && param.k == 10 &&
              param.segment_size == 64) {
     impl_ = std::make_shared<ggnn_impl<T, Cosine, 96, 96, 10, 64>>(metric, dim, param);
@@ -186,7 +193,7 @@ class ggnn_impl : public algo<T>, public algo_gpu {
     int device;
     cudaGetDevice(&device);
     ggnn_ = std::make_shared<ggnngpu_instance>(
-      device, base_n_rows_, build_param_.num_layers, true, build_param_.tau);
+      device, base_n_rows_, build_param_.num_layers, true, build_param_.tau_build);
     ggnn_->set_base_data(base_dataset_);
     ggnn_->set_stream(get_sync_stream());
     if (graph_file_.has_value()) {
@@ -260,7 +267,7 @@ void ggnn_impl<T, measure, D, KBuild, KQuery, S>::search(
   }
 
   ggnn_->set_stream(get_sync_stream());
-  cudaMemcpyToSymbol(c_tau_query, &search_param_.tau, sizeof(float));
+  cudaMemcpyToSymbol(c_tau_query, &search_param_.tau_query, sizeof(float));
 
   const int block_dim      = search_param_.block_dim;
   const int max_iterations = search_param_.max_iterations;
@@ -269,6 +276,10 @@ void ggnn_impl<T, measure, D, KBuild, KQuery, S>::search(
   // default value
   if (block_dim == 32 && max_iterations == 400 && cache_size == 512 && sorted_size == 256) {
     ggnn_->template queryLayer<32, 400, 512, 256, false>(
+      queries, batch_size, reinterpret_cast<int64_t*>(neighbors), distances);
+  }
+  else if (block_dim == 32 && max_iterations == 1000 && cache_size == 512 && sorted_size == 256) {
+    ggnn_->template queryLayer<32, 1000, 512, 256, false>(
       queries, batch_size, reinterpret_cast<int64_t*>(neighbors), distances);
   }
   // ggnn/src/sift1m.cu
