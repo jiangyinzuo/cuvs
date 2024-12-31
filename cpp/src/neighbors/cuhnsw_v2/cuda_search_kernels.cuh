@@ -8,12 +8,56 @@
 
 namespace cuhnsw_v2 {
 
-__global__ void GetEntryPointsKernel(const cuda_scalar* qdata,
-                                     const int* qnodes,
+/**
+ * QueryDataAccessor used in build phase
+ */
+class BuildQueryDataAccessor {
+ public:
+  BuildQueryDataAccessor(cuda_scalar* qdata, int* qnodes, size_t size)
+    : qdata_(qdata), qnodes_(qnodes), size_(size)
+  {
+  }
+
+  __device__ const cuda_scalar* get(size_t i, const int num_dims) const
+  {
+    return qdata_ + num_dims * qnodes_[i];
+  }
+
+  __device__ __host__ size_t size() const { return size_; }
+
+ private:
+  const cuda_scalar* qdata_;
+  int* qnodes_;
+  size_t size_;
+};
+
+/**
+ * QueryDataAccessor used in search phase
+ */
+class SearchQueryDataAccessor {
+ public:
+  explicit SearchQueryDataAccessor(const cuda_scalar* qdata, size_t size)
+    : qdata_(qdata), size_(size)
+  {
+  }
+
+  __device__ const cuda_scalar* get(size_t i, const int num_dims) const
+  {
+    return qdata_ + num_dims * i;
+  }
+
+  __device__ __host__ size_t size() const { return size_; }
+
+ private:
+  const cuda_scalar* qdata_;
+  size_t size_;
+};
+
+template <class QueryDataAccessor>
+__global__ void GetEntryPointsKernel(const QueryDataAccessor qdata_accessor,
                                      const cuda_scalar* target_data,
                                      const int* target_nodes,
                                      const int num_dims,
-                                     const int num_qnodes,
                                      const int num_target_nodes,
                                      const int max_m,
                                      const int dist_type,
@@ -28,12 +72,12 @@ __global__ void GetEntryPointsKernel(const cuda_scalar* qdata,
   bool* _visited     = visited + num_target_nodes * blockIdx.x;
   int* _visited_list = visited_list + visited_list_size * blockIdx.x;
 
-  for (int i = blockIdx.x; i < num_qnodes; i += gridDim.x) {
+  for (int i = blockIdx.x; i < qdata_accessor.size(); i += gridDim.x) {
     if (threadIdx.x == 0) { visited_cnt = 0; }
     __syncthreads();
     cuda_scalar entry_dist     = 0;
     int entryid                = entries[i];
-    const cuda_scalar* src_vec = qdata + num_dims * qnodes[i];
+    const cuda_scalar* src_vec = qdata_accessor.get(i, num_dims);
     {
       const cuda_scalar* dst_vec = target_data + num_dims * target_nodes[entryid];
       entry_dist                 = GetDistanceByVec(src_vec, dst_vec, num_dims, dist_type);

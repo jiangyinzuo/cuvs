@@ -474,6 +474,10 @@ if(BUILD_SHARED_LIBS)
     src/stats/trustworthiness_score.cu
     ${CUVS_MG_ALGOS}
   )
+  # set_source_files_properties(
+  #   src/neighbors/cuhnsw_v2/cuhnsw_base.cu
+  #   src/neighbors/cuhnsw_v2/cuhnsw_build.cu
+  #   PROPERTIES COMPILE_OPTIONS "-O0;-g;-G")
 
   set_target_properties(
     cuvs_objs

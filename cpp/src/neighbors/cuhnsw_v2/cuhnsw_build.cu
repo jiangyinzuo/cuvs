@@ -3,10 +3,7 @@
 //
 // This source code is licensed under the Apache 2.0 license found in the
 // LICENSE file in the root directory of this source tree.
-#include <algorithm>
-#include <iostream>
-#include <numeric>
-#include <raft/core/logger-macros.hpp>
+#include <raft/core/logger.hpp>
 #include <raft/util/cuda_rt_essentials.hpp>
 #include <set>
 #include <vector>
@@ -17,14 +14,13 @@
 
 namespace cuhnsw_v2 {
 
-void CuHNSW::GetEntryPoints(const cuda_scalar* qdata,
-                            const std::vector<int>& nodes,
-                            std::vector<int>& entries)
+template <class QueryDataAccessor>
+void CuHNSW::GetEntryPoints(QueryDataAccessor qdata_accessor, std::vector<int>& entries)
 {
   assert(qdata);
   thrust::device_vector<int> dev_visited_list(visited_list_size_ * block_cnt_);
   for (int level = max_level_; level > 0; --level) {
-    int size = nodes.size();
+    int size = qdata_accessor.size();
 
     // process input data for kernel
     LevelGraph& graph                   = level_graphs_[level];
@@ -46,10 +42,9 @@ void CuHNSW::GetEntryPoints(const cuda_scalar* qdata,
     }
 
     // copy to gpu mem
-    thrust::device_vector<int> dev_nodes(size), dev_entries(size);
+    thrust::device_vector<int> dev_entries(size);
     thrust::device_vector<int> dev_upper_nodes(upper_size), dev_deg(upper_size);
     thrust::device_vector<int> dev_neighbors(upper_size * max_m_);
-    thrust::copy(nodes.begin(), nodes.end(), dev_nodes.begin());
     thrust::copy(entries.begin(), entries.end(), dev_entries.begin());
     thrust::copy(upper_nodes.begin(), upper_nodes.end(), dev_upper_nodes.begin());
     thrust::copy(deg.begin(), deg.end(), dev_deg.begin());
@@ -58,22 +53,20 @@ void CuHNSW::GetEntryPoints(const cuda_scalar* qdata,
     thrust::device_vector<bool> dev_visited(upper_size * block_cnt_, false);
 
     // run kernel
-    GetEntryPointsKernel<<<block_cnt_, block_dim_>>>(
-      qdata,
-      thrust::raw_pointer_cast(dev_nodes.data()),
-      thrust::raw_pointer_cast(device_data_.data()),
-      thrust::raw_pointer_cast(dev_upper_nodes.data()),
-      num_dims_,
-      size,
-      upper_size,
-      max_m_,
-      dist_type_,
-      thrust::raw_pointer_cast(dev_neighbors.data()),
-      thrust::raw_pointer_cast(dev_deg.data()),
-      thrust::raw_pointer_cast(dev_visited.data()),
-      thrust::raw_pointer_cast(dev_visited_list.data()),
-      visited_list_size_,
-      thrust::raw_pointer_cast(dev_entries.data()));
+    GetEntryPointsKernel<QueryDataAccessor>
+      <<<block_cnt_, block_dim_>>>(qdata_accessor,
+                                   thrust::raw_pointer_cast(device_data_.data()),
+                                   thrust::raw_pointer_cast(dev_upper_nodes.data()),
+                                   num_dims_,
+                                   upper_size,
+                                   max_m_,
+                                   dist_type_,
+                                   thrust::raw_pointer_cast(dev_neighbors.data()),
+                                   thrust::raw_pointer_cast(dev_deg.data()),
+                                   thrust::raw_pointer_cast(dev_visited.data()),
+                                   thrust::raw_pointer_cast(dev_visited_list.data()),
+                                   visited_list_size_,
+                                   thrust::raw_pointer_cast(dev_entries.data()));
     RAFT_CUDA_TRY(cudaDeviceSynchronize());
     // el_[GPU] += sw_[GPU].CheckPoint();
     thrust::copy(dev_entries.begin(), dev_entries.end(), entries.begin());
@@ -126,7 +119,13 @@ void CuHNSW::BuildLevelGraph(int level)
   // initialize entries
   std::vector<int> entries(new_nodes.size(), enter_point_);
 
-  GetEntryPoints(thrust::raw_pointer_cast(device_data_.data()), new_nodes, entries);
+  thrust::device_vector<int> dev_nodes(new_nodes.size());
+  thrust::copy(new_nodes.begin(), new_nodes.end(), dev_nodes.begin());
+  BuildQueryDataAccessor qdata_accessor(thrust::raw_pointer_cast(device_data_.data()),
+                                        thrust::raw_pointer_cast(dev_nodes.data()),
+                                        new_nodes.size());
+
+  GetEntryPoints<BuildQueryDataAccessor>(qdata_accessor, entries);
   for (size_t i = 0; i < new_nodes.size(); ++i) {
     int srcid                = graph.GetNodeId(new_nodes[i]);
     int dstid                = graph.GetNodeId(entries[i]);
@@ -183,8 +182,6 @@ void CuHNSW::BuildLevelGraph(int level)
   std::vector<float> distances(max_m * size);
   thrust::copy(device_distances.begin(), device_distances.end(), distances.begin());
 
-  RAFT_CUDA_TRY(cudaDeviceSynchronize());
-
   for (auto& node : graph.GetNodes()) {
     graph.ClearEdges(node);
   }
@@ -206,9 +203,9 @@ void CuHNSW::SearchGraph(raft::device_matrix_view<const float, int64_t, raft::ro
                          float* distances,
                          raft::device_vector_view<int> found_cnt)
 {
-  std::vector<int> qnodes(num_queries, 0);
   std::vector<int> entries(num_queries, enter_point_);
-  GetEntryPoints(queries.data_handle(), qnodes, entries);
+  SearchQueryDataAccessor qdata_accessor(queries.data_handle(), static_cast<size_t>(num_queries));
+  GetEntryPoints<SearchQueryDataAccessor>(qdata_accessor, entries);
   std::vector<int> graph_vec(max_m0_ * num_data_);
   std::vector<int> deg(num_data_);
   LevelGraph graph = level_graphs_[0];
