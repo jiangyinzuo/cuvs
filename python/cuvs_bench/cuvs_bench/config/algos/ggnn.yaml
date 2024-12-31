@@ -1,3 +1,20 @@
 name: ggnn
+constraints:
+  build: cuvs_bench.config.algos.constraints.ggnn_build
+  search: cuvs_bench.config.algos.constraints.ggnn_search
 groups:
-
+  base:
+    build:
+      k_build: [24]
+      segment_size: [32]
+      num_layers: [4]
+      tau_build: [0.5]
+      refine_iterations: [2]
+      # GGNN requires to know k during building
+      k_query: [10]
+    search:
+      tau_query: [0.09, 0.12, 0.18, 0.25, 0.5, 0.8, 0.95]
+      block_dim: [32, 128]
+      max_iterations: [400, 1000, 2000]
+      cache_size: [512, 1024]
+      sorted_size: [32, 256]

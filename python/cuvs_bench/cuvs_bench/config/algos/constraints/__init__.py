@@ -111,6 +111,20 @@ def cuhnsw_search(params, build_params, k, batch_size):
         return params["ef_search"] >= k
 
 
+def ggnn_build(params, dims):
+    return True
+
+
+_GGNN_VALID_SEARCH_PARAMS = {
+        (32, 400, 512, 256),
+        (32, 1000, 512, 256),
+        (128, 2000, 1024, 32),
+        }
+
+
+def ggnn_search(params, build_params, k, batch_size):
+    return k == build_params["k_query"] and (params["block_dim"], params["max_iterations"], params["cache_size"], params["sorted_size"]) in _GGNN_VALID_SEARCH_PARAMS
+
 ###############################################################################
 #                               ganns constraints                             #
 ###############################################################################
