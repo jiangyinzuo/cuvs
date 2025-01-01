@@ -139,7 +139,7 @@ class CuHNSW {
 
  private:
   template <class QueryDataAccessor>
-  void GetEntryPoints(QueryDataAccessor qdata_accessor, std::vector<int>& entries);
+  void GetEntryPoints(QueryDataAccessor qdata_accessor, const int min_level, std::vector<int>& entries);
   void SearchAtLayer(const std::vector<int>& queries,
                      std::vector<std::deque<std::pair<float, int>>>& entries,
                      int level,

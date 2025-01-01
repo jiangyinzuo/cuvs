@@ -15,11 +15,13 @@
 namespace cuhnsw_v2 {
 
 template <class QueryDataAccessor>
-void CuHNSW::GetEntryPoints(QueryDataAccessor qdata_accessor, std::vector<int>& entries)
+void CuHNSW::GetEntryPoints(QueryDataAccessor qdata_accessor,
+                            const int min_level,
+                            std::vector<int>& entries)
 {
   assert(qdata);
   thrust::device_vector<int> dev_visited_list(visited_list_size_ * block_cnt_);
-  for (int level = max_level_; level > 0; --level) {
+  for (int level = max_level_; level > min_level; --level) {
     int size = qdata_accessor.size();
 
     // process input data for kernel
@@ -122,7 +124,7 @@ void CuHNSW::BuildGraph()
                                           thrust::raw_pointer_cast(dev_nodes.data()),
                                           new_nodes.size());
 
-    GetEntryPoints<BuildQueryDataAccessor>(qdata_accessor, entries);
+    GetEntryPoints<BuildQueryDataAccessor>(qdata_accessor, level, entries);
     for (size_t i = 0; i < new_nodes.size(); ++i) {
       int srcid                = graph.GetNodeId(new_nodes[i]);
       int dstid                = graph.GetNodeId(entries[i]);
@@ -203,7 +205,7 @@ void CuHNSW::SearchGraph(raft::device_matrix_view<const float, int64_t, raft::ro
 {
   std::vector<int> entries(num_queries, enter_point_);
   SearchQueryDataAccessor qdata_accessor(queries.data_handle(), static_cast<size_t>(num_queries));
-  GetEntryPoints<SearchQueryDataAccessor>(qdata_accessor, entries);
+  GetEntryPoints<SearchQueryDataAccessor>(qdata_accessor, 0, entries);
   std::vector<int> graph_vec(max_m0_ * num_data_);
   std::vector<int> deg(num_data_);
   LevelGraph graph = level_graphs_[0];
