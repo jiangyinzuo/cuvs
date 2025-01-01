@@ -148,7 +148,6 @@ class CuHNSW {
                               int level,
                               int max_m,
                               bool postprocess);
-  void BuildLevelGraph(int level);
   std::vector<LevelGraph> level_graphs_;
   std::vector<int> levels_;
 
