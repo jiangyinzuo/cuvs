@@ -6,6 +6,7 @@ using namespace std;
 class GraphWrapper{
 
 public:
+  virtual ~GraphWrapper() {}
 	virtual void Dump(string graph_name) = 0;
 	virtual void Establishment(int num_of_initial_neighbors, int num_of_candidates) = 0;
 	virtual void Load(string graph_path) = 0;

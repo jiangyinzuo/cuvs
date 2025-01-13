@@ -141,6 +141,6 @@ def ganns_build(params, dims):
 
 
 def ganns_search(params, build_params, k, batch_size):
-    if "num_of_candidates" in build_params:
-        return build_params["num_of_candidates"] >= k
+    if "num_of_candidates_search" in params:
+        return params["num_of_candidates_search"] >= k
     return False

@@ -909,46 +909,6 @@ index:
   - itopk: 64
   - itopk: 128
   search_result_file: result/glove-100-inner/raft_cagra/dim64
-- algo: ganns
-  build_param:
-    hierachical: True
-    num_of_candidates: 64
-    num_of_initial_neighbors: 16
-  file: index/glove-100-inner/ganns/hnsw-64-16
-  name: ganns
-  search_result_file: index/glove-100-inner/ganns/hnsw-64-16
-- algo: ganns
-  build_param:
-    hierachical: True
-    num_of_candidates: 128
-    num_of_initial_neighbors: 16
-  file: index/glove-100-inner/ganns/hnsw-128-16
-  name: ganns
-  search_result_file: index/glove-100-inner/ganns/hnsw-128-16
-- algo: ganns
-  build_param:
-    hierachical: True
-    num_of_candidates: 256
-    num_of_initial_neighbors: 16
-  file: index/glove-100-inner/ganns/hnsw-256-16
-  name: ganns
-  search_result_file: index/glove-100-inner/ganns/hnsw-256-16
-- algo: ganns
-  build_param:
-    hierachical: True
-    num_of_candidates: 512
-    num_of_initial_neighbors: 16
-  file: index/glove-100-inner/ganns/hnsw-512-16
-  name: ganns
-  search_result_file: index/glove-100-inner/ganns/hnsw-512-16
-- algo: ganns
-  build_param:
-    hierachical: True
-    num_of_candidates: 512
-    num_of_initial_neighbors: 64
-  file: index/glove-100-inner/ganns/hnsw-512-64
-  name: ganns
-  search_result_file: index/glove-100-inner/ganns/hnsw-512-64
 search_basic_param:
   batch_size: 5000
   k: 10

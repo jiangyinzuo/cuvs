@@ -310,8 +310,11 @@ if(CUVS_ANN_BENCH_USE_GGNN)
 endif()
 
 if(CUVS_ANN_BENCH_USE_GANNS)
+  # set_source_files_properties(src/ganns/ganns_benchmark.cu PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+  # set_source_files_properties(src/ganns/ganns_benchmark.cu PROPERTIES COMPILE_OPTIONS "-L;/usr3/jiangyinzuo_data/GANNS/;-lganns")
+  # find_library(GANNS_LIB ganns PATHS /usr3/jiangyinzuo_data/GANNS/ REQUIRED)
   ConfigureAnnBench(
-    NAME GANNS PATH src/ganns/ganns_benchmark.cu LINKS CUDA::curand
+      NAME GANNS PATH src/ganns/ganns_benchmark.cu LINKS CUDA::curand # ${GANNS_LIB}
   )
 endif()
 

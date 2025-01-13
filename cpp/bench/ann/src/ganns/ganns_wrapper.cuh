@@ -19,10 +19,10 @@
 #include "../common/util.hpp"
 
 #include "ganns/data.h"
-#include "ganns/graph_index/hierarchical_navigable_small_world.h"
-#include "ganns/graph_index/navigable_small_world.h"
+// #include "ganns/ganns.h"
+#include "ganns/ganns-ext.h"
 #include "ganns/metric_type.h"
-
+#include <iostream>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -44,11 +44,7 @@ class ganns : public algo<float>, public algo_gpu {
 
   using search_param_base = typename algo<float>::search_param;
   struct search_param : public search_param_base {
-    // float tau;
-    // int block_dim{32};
-    // int max_iterations{400};
-    // int cache_size{512};
-    // int sorted_size{256};
+    int num_of_candidates;  // the number of explored vertices;
     [[nodiscard]] auto needs_dataset() const -> bool override { return true; }
   };
 
@@ -134,10 +130,7 @@ class ganns_impl : public algo<float>, public algo_gpu {
   using algo<float>::metric_;
   using algo<float>::dim_;
 
-  using gannsgpu_instance =
-    typename std::conditional<HIERARCHICAL,
-                              HierarchicalNavigableSmallWorld<metric_type, D>,
-                              NavigableSmallWorldGraphWithFixedDegree<metric_type, D>>::type;
+  using gannsgpu_instance = ::ganns::GANNS;
   std::shared_ptr<gannsgpu_instance> ganns_;
   typename ganns::build_param build_param_;
   typename ganns::search_param search_param_;
@@ -154,7 +147,8 @@ class ganns_impl : public algo<float>, public algo_gpu {
     if (dim_ > 960) { throw std::runtime_error("GANNS instance only supports dim <= 960"); }
 
     Data* data = new Data(const_cast<float*>(base_dataset_), base_n_rows_, dim_);
-    ganns_     = std::make_shared<gannsgpu_instance>(data);
+    ganns_     = std::make_shared<gannsgpu_instance>();
+    ganns_->AddGraph<metric_type, D>(HIERARCHICAL ? "hnsw" : "hnsw", data);
     if (graph_file_.has_value()) { ganns_->Load(graph_file_.value()); }
   }
 };
@@ -190,7 +184,7 @@ ganns::ganns(Metric metric, int dim, const build_param& param) : algo<float>(met
     } else {
       impl_ = std::make_shared<ganns_impl<100, ::ganns::MetricType::IP, false>>(metric, dim, param);
     }
-  // glove100-inner
+    // glove100-inner
   } else if (metric == Metric::kEuclidean && dim == 100) {
     if (param.hierarchical) {
       impl_ = std::make_shared<ganns_impl<100, ::ganns::MetricType::L2, true>>(metric, dim, param);
@@ -205,7 +199,8 @@ ganns::ganns(Metric metric, int dim, const build_param& param) : algo<float>(met
     }
   } else {
     throw std::runtime_error(
-      "ganns: not supported combination of metric, dim and build param: metric=" + std::to_string(static_cast<int>(metric)) + ", dim=" + std::to_string(dim) + " . " +
+      "ganns: not supported combination of metric, dim and build param: metric=" +
+      std::to_string(static_cast<int>(metric)) + ", dim=" + std::to_string(dim) + " . " +
       "see GANNS's constructor in ggnn_wrapper.cuh for available combinations");
   }
 }
@@ -242,18 +237,19 @@ void ganns_impl<D, metric_type, HIERARCHICAL>::search(const float* queries,
                                                       algo_base::index_type* neighbors,
                                                       float* distances) const
 {
-  static_assert(sizeof(size_t) == sizeof(int64_t), "sizes of size_t and GGNN's KeyT are different");
+  static_assert(sizeof(size_t) == sizeof(int64_t), "sizes of size_t and GANNS's KeyT are different");
 
   int* results = nullptr;
   ganns_->SearchTopKonDevice(
-    const_cast<float*>(queries), k, results, batch_size, build_param_.num_of_candidates);
+    const_cast<float*>(queries), k, results, batch_size, search_param_.num_of_candidates);
   std::cout << "batch: " << batch_size << " k: " << k << std::endl;
+  int internal_topk = pow(2.0, ceil(log(k) / log(2)));
   for (int i = 0; i < batch_size; ++i) {
     for (int j = 0; j < k; ++j) {
-      neighbors[i * k + j] = results[i * k + j];
-      std::cout << results[i * k + j] << " ";
+      neighbors[i * k + j] = results[i * internal_topk + j];
+      // if (i < 10) { std::cout << results[i * internal_topk + j] << " "; }
     }
-    std::cout << std::endl;
+    // if (i < 10) { std::cout << std::endl; }
   }
   ganns_->FreeResults(results);
 }

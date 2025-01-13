@@ -31,7 +31,7 @@ template <typename T>
 void parse_build_param(const nlohmann::json& conf, typename cuvs::bench::ganns::build_param& param)
 {
   param.hierarchical             = conf.at("hierarchical");
-  param.num_of_candidates        = conf.at("num_of_candidates");
+  param.num_of_candidates        = conf.at("num_of_candidates_build");
   param.num_of_initial_neighbors = conf.at("num_of_initial_neighbors");
 }
 
@@ -39,6 +39,7 @@ template <typename T>
 void parse_search_param(const nlohmann::json& conf,
                         typename cuvs::bench::ganns::search_param& param)
 {
+  param.num_of_candidates = conf.at("num_of_candidates_search");
 }
 
 template <typename T, class Algo>
@@ -60,7 +61,7 @@ auto create_algo(const std::string& algo_name,
   std::unique_ptr<cuvs::bench::algo<T>> a;
 
   if constexpr (std::is_same_v<T, float>) {
-    if (algo_name == "ganns") { a = make_algo<T, cuvs::bench::ganns>(metric, dim, conf); }
+    if (algo_name == "ganns_nsw" || algo_name == "ganns_hnsw") { a = make_algo<T, cuvs::bench::ganns>(metric, dim, conf); }
   }
   if (!a) { throw std::runtime_error("invalid algo: '" + algo_name + "'"); }
 
@@ -72,7 +73,7 @@ auto create_search_param(const std::string& algo_name, const nlohmann::json& con
   -> std::unique_ptr<typename cuvs::bench::algo<T>::search_param>
 {
   if constexpr (std::is_same_v<T, float>) {
-    if (algo_name == "ganns") {
+    if (algo_name == "ganns_nsw" || algo_name == "ganns_hnsw") {
       auto param = std::make_unique<typename cuvs::bench::ganns::search_param>();
       parse_search_param<float>(conf, *param);
       return param;

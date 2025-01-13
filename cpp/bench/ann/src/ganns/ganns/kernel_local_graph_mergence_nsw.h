@@ -25,9 +25,9 @@ void LocalGraphMergence(KernelPair<float, int>* d_neighbors, KernelPair<float, i
     KernelPair<float, int>* crt_neighbor = d_neighbors + (crt_point_id << offset_shift);
     KernelPair<float, int>* crt_old_neighbors = d_neighbors_backup + (crt_point_id << offset_shift);
 
-    float q[DIM / 32];
+    float q[(DIM + 31) / 32];
 #pragma unroll
-    for (int i = 0; i < DIM / 32; ++i) {
+    for (int i = 0; i < (DIM + 31) / 32; ++i) {
         q[i] = 0;
         if (t_id + 32 * i < DIM) {
             q[i] = d_data[crt_point_id * DIM + t_id + i * 32];
@@ -69,31 +69,31 @@ void LocalGraphMergence(KernelPair<float, int>* d_neighbors, KernelPair<float, i
 
     int target_point_id = 0;
     
-    float p[DIM / 32];
+    float p[(DIM + 31) / 32];
 #pragma unroll
-    for (int i = 0; i < DIM / 32; ++i) {
+    for (int i = 0; i < (DIM + 31) / 32; ++i) {
         p[i] = 0;
         if (t_id + 32 * i < DIM) {
             p[i] = d_data[target_point_id * DIM + t_id + i * 32];
         }
     }
 
-    float delta[DIM / 32];
-    float p_l2[DIM / 32];
-    float q_l2[DIM / 32];
+    float delta[(DIM + 31) / 32];
+    float p_l2[(DIM + 31) / 32];
+    float q_l2[(DIM + 31) / 32];
     if constexpr (metric_type == ganns::MetricType::L2) {
 #pragma unroll
-        for (int i = 0; i < DIM / 32; ++i) {
+        for (int i = 0; i < (DIM + 31) / 32; ++i) {
             delta[i] = (p[i] - q[i]) * (p[i] - q[i]);
         }
     } else if (metric_type == ganns::MetricType::IP) {
 #pragma unroll
-        for (int i = 0 ; i < DIM / 32; ++i) {
+        for (int i = 0 ; i < (DIM + 31) / 32; ++i) {
             delta[i] = p[i] * q[i];
         }
     } else if (metric_type == ganns::MetricType::COS) {
 #pragma unroll
-        for (int i = 0; i < DIM / 32; ++i) {
+        for (int i = 0; i < (DIM + 31) / 32; ++i) {
             delta[i] = p[i] * q[i];
             p_l2[i] = p[i] * p[i];
             q_l2[i] = q[i] * q[i];
@@ -106,16 +106,16 @@ void LocalGraphMergence(KernelPair<float, int>* d_neighbors, KernelPair<float, i
     float q_l2_sum = 0;
     if constexpr (metric_type == ganns::MetricType::L2) {
 #pragma unroll
-        for (int i = 0; i < DIM / 32; ++i) {
+        for (int i = 0; i < (DIM + 31) / 32; ++i) {
             dist += delta[i];
         }
     } else if constexpr (metric_type == ganns::MetricType::IP) {
 #pragma unroll
-        for (int i = 0; i < DIM / 32; ++i) {
+        for (int i = 0; i < (DIM + 31) / 32; ++i) {
             dist += delta[i];
         }
     } else if constexpr (metric_type == ganns::MetricType::COS) {
-        for (int i = 0; i < DIM / 32; ++i) {
+        for (int i = 0; i < (DIM + 31) / 32; ++i) {
             dist += delta[i];
             p_l2_sum += p_l2[i];
             q_l2_sum += q_l2[i];
@@ -183,31 +183,31 @@ void LocalGraphMergence(KernelPair<float, int>* d_neighbors, KernelPair<float, i
                 continue;
             }
             
-          float p[DIM / 32];
+          float p[(DIM + 31) / 32];
 #pragma unroll
-          for (int k = 0; k < DIM / 32; ++k) {
+          for (int k = 0; k < (DIM + 31) / 32; ++k) {
               p[k] = 0;
               if (t_id + 32 * k < DIM) {
                   p[k] = d_data[target_point_id * DIM + t_id + k * 32];
               }
           }
 
-          float delta[DIM / 32];
-          float p_l2[DIM / 32];
-          float q_l2[DIM / 32];
+          float delta[(DIM + 31) / 32];
+          float p_l2[(DIM + 31) / 32];
+          float q_l2[(DIM + 31) / 32];
           if constexpr (metric_type == ganns::MetricType::L2) {
 #pragma unroll
-              for (int k = 0; k < DIM / 32; ++k) {
+              for (int k = 0; k < (DIM + 31) / 32; ++k) {
                   delta[k] = (p[k] - q[k]) * (p[k] - q[k]);
               }
           } else if (metric_type == ganns::MetricType::IP) {
 #pragma unroll
-              for (int k = 0 ; k < DIM / 32; ++k) {
+              for (int k = 0 ; k < (DIM + 31) / 32; ++k) {
                   delta[k] = p[k] * q[k];
               }
           } else if (metric_type == ganns::MetricType::COS) {
 #pragma unroll
-              for (int k = 0; k < DIM / 32; ++k) {
+              for (int k = 0; k < (DIM + 31) / 32; ++k) {
                   delta[k] = p[k] * q[k];
                   p_l2[k] = p[k] * p[k];
                   q_l2[k] = q[k] * q[k];
@@ -219,16 +219,16 @@ void LocalGraphMergence(KernelPair<float, int>* d_neighbors, KernelPair<float, i
           float q_l2_sum = 0;
           if constexpr (metric_type == ganns::MetricType::L2) {
 #pragma unroll
-              for (int k = 0; k < DIM / 32; ++k) {
+              for (int k = 0; k < (DIM + 31) / 32; ++k) {
                   dist += delta[k];
               }
           } else if constexpr (metric_type == ganns::MetricType::IP) {
 #pragma unroll
-              for (int k = 0; k < DIM / 32; ++k) {
+              for (int k = 0; k < (DIM + 31) / 32; ++k) {
                   dist += delta[k];
               }
           } else if constexpr (metric_type == ganns::MetricType::COS) {
-              for (int k = 0; k < DIM / 32; ++k) {
+              for (int k = 0; k < (DIM + 31) / 32; ++k) {
                   dist += delta[k];
                   p_l2_sum += p_l2[k];
                   q_l2_sum += q_l2[k];

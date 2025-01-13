@@ -182,7 +182,12 @@ public:
       exit(1);
     }
     // wait for the kernel to finish
-    // cudaDeviceSynchronize();
+    cudaDeviceSynchronize();
+    err = cudaGetLastError();
+    if (err != cudaSuccess) {
+      cout << "Error in kernel_search_hnsw: " << cudaGetErrorString(err) << endl;
+      exit(1);
+    }
 		cudaMemcpy(h_result, d_result, sizeof(int) * num_of_query_points * num_of_topk, cudaMemcpyDeviceToHost);
     cudaFree(d_data);
     cudaFree(d_query);
