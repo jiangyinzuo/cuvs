@@ -144,3 +144,16 @@ def ganns_search(params, build_params, k, batch_size):
     if "num_of_candidates_search" in params:
         return params["num_of_candidates_search"] >= k
     return False
+
+
+###############################################################################
+#                               song constraints                              #
+###############################################################################
+
+
+def song_build(params, dims):
+    return True
+
+
+def song_search(params, build_params, k, batch_size):
+    return "pq_size" in params and params["pq_size"] >= k

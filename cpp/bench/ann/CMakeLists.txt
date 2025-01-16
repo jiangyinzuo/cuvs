@@ -33,6 +33,7 @@ option(CUVS_ANN_BENCH_USE_CUVS_CAGRA_HNSWLIB "Include cuVS CAGRA with HNSW searc
 option(CUVS_ANN_BENCH_USE_HNSWLIB "Include hnsw algorithm in benchmark" ON)
 option(CUVS_ANN_BENCH_USE_GGNN "Include ggnn algorithm in benchmark" ON)
 option(CUVS_ANN_BENCH_USE_GANNS "Include ganns algorithm in benchmark" ON)
+option(CUVS_ANN_BENCH_USE_SONG "Include song algorithm in benchmark" ON)
 option(CUVS_ANN_BENCH_USE_CUHNSW "Include cuhnsw algorithm in benchmark" ON)
 option(CUVS_ANN_BENCH_USE_CUVS_MG "Include cuVS ann mg algorithm in benchmark" ${BUILD_MG_ALGOS})
 option(CUVS_ANN_BENCH_SINGLE_EXE
@@ -58,6 +59,7 @@ if(BUILD_CPU_ONLY)
   set(CUVS_ANN_BENCH_USE_CUVS_CAGRA_HNSWLIB OFF)
   set(CUVS_ANN_BENCH_USE_GGNN OFF)
   set(CUVS_ANN_BENCH_USE_GANNS OFF)
+  set(CUVS_ANN_BENCH_USE_SONG OFF)
   set(CUVS_ANN_BENCH_USE_CUHNSW OFF)
   set(CUVS_KNN_BENCH_USE_CUVS_BRUTE_FORCE OFF)
   set(CUVS_ANN_BENCH_USE_CUVS_MG OFF)
@@ -315,6 +317,13 @@ if(CUVS_ANN_BENCH_USE_GANNS)
   # find_library(GANNS_LIB ganns PATHS /usr3/jiangyinzuo_data/GANNS/ REQUIRED)
   ConfigureAnnBench(
       NAME GANNS PATH src/ganns/ganns_benchmark.cu LINKS CUDA::curand # ${GANNS_LIB}
+  )
+endif()
+
+if(CUVS_ANN_BENCH_USE_SONG)
+  # set_source_files_properties(src/song/song_benchmark.cu PROPERTIES COMPILE_OPTIONS "-O0;-g;-G")
+  ConfigureAnnBench(
+      NAME SONG PATH src/song/song_benchmark.cu
   )
 endif()
 

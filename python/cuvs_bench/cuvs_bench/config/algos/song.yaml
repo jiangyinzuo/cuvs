@@ -1,0 +1,13 @@
+name: song
+constraints:
+  build: cuvs_bench.config.algos.constraints.song_build
+  search: cuvs_bench.config.algos.constraints.song_search
+groups:
+  base:
+    build:
+      num_threads: [32]
+      degree: [15]
+    search:
+      # finish_cnt: [1, 5, 10, 100, 400]
+      finish_cnt: [400]
+      pq_size: [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]

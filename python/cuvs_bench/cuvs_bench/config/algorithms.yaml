@@ -49,6 +49,9 @@ ganns_nsw:
 ganns_hnsw:
   executable: GANNS_ANN_BENCH
   requires_gpu: true
+song:
+  executable: SONG_ANN_BENCH
+  requires_gpu: true
 cuhnsw:
   executable: CUHNSW_ANN_BENCH
   requires_gpu: true
