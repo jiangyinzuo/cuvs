@@ -204,7 +204,7 @@ class HierarchicalNavigableSmallWorld : public GraphWrapper {
     int num_of_explored_points = num_of_candidates;
     num_of_candidates          = pow(2.0, ceil(log(num_of_candidates) / log(2)));
 
-    DisplaySearchParameters(num_of_topk_, num_of_explored_points);
+    // DisplaySearchParameters(num_of_topk_, num_of_explored_points);
 
     // std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now();
     HNSWGraphOperations<metric_type, DIM>::Search(points_->GetFirstPositionofPoint(0),
@@ -250,7 +250,7 @@ class HierarchicalNavigableSmallWorld : public GraphWrapper {
         << "err: " << cudaGetErrorString(err) << endl;
       exit(1);
     }
-    DisplayGraphParameters(num_of_candidates);
+    // DisplayGraphParameters(num_of_candidates);
 
     float* d_points;
     KernelPair<float, int>* d_neighbors_backup;

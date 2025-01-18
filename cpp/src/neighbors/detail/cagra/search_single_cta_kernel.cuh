@@ -41,6 +41,10 @@ void select_and_run(const dataset_descriptor_host<DataT, IndexT, DistanceT>& dat
                     size_t small_hash_reset_interval,
                     uint32_t num_seeds,
                     SampleFilterT sample_filter,
+#ifdef _GRAPH_QUALITY_ANALYSIS
+                    uint64_t* graph_metrics_global_distance_calculation_counter1_ptr,
+                    uint64_t* graph_metrics_global_distance_calculation_counter2_ptr,
+#endif
                     cudaStream_t stream);
 
 }

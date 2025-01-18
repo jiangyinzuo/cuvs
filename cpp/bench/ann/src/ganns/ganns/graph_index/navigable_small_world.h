@@ -151,7 +151,7 @@ public:
         int num_of_explored_points = num_of_candidates;
         num_of_candidates = pow(2.0, ceil(log(num_of_candidates) / log(2)));
 
-        DisplaySearchParameters(num_of_topk_, num_of_explored_points);
+        // DisplaySearchParameters(num_of_topk_, num_of_explored_points);
 
         // std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now();
     	NSWGraphOperations<metric_type, DIM>::Search(points_->GetFirstPositionofPoint(0), queries, graph_, results, num_of_query_points, points_->GetNumPoints(), points_->GetDimofPoints(), offset_shift_, num_of_topk_, num_of_candidates, num_of_explored_points);
@@ -171,7 +171,7 @@ public:
         offset_shift_ = log(num_of_initial_neighbors_) / log(2) + 1;
         num_of_maximal_neighbors_ = (1 << offset_shift_);
 
-        DisplayGraphParameters(num_of_candidates);
+        // DisplayGraphParameters(num_of_candidates);
 
         pair<float, int> neighbor_intialisation = std::make_pair(Max, points_->GetNumPoints());
         vector<pair<float, int>> substitute(num_of_points_one_batch_ * num_of_maximal_neighbors_, neighbor_intialisation);

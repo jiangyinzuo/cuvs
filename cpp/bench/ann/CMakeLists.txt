@@ -207,6 +207,10 @@ endif()
 if(CUVS_ANN_BENCH_USE_HNSWLIB)
   ConfigureAnnBench(NAME HNSWLIB PATH src/hnswlib/hnswlib_benchmark.cpp LINKS hnswlib::hnswlib)
 
+  add_executable(HNSWLIB_GRAPH_ANALYSIS src/hnswlib/hnswlib_graph_analysis.cpp)
+  target_link_libraries(
+      HNSWLIB_GRAPH_ANALYSIS PRIVATE hnswlib::hnswlib Threads::Threads
+  )
 endif()
 
 if(CUVS_ANN_BENCH_USE_CUVS_IVF_PQ)

@@ -150,6 +150,8 @@ struct search_plan_impl : public search_plan_impl_base {
 
   lightweight_uvector<INDEX_T> hashmap;
   lightweight_uvector<uint32_t> num_executed_iterations;  // device or managed?
+  lightweight_uvector<uint64_t> graph_metrics_global_distance_calculation_counter1;
+  lightweight_uvector<uint64_t> graph_metrics_global_distance_calculation_counter2;
   lightweight_uvector<INDEX_T> dev_seed;
   dataset_descriptor_host<DataT, IndexT, DistanceT> dataset_desc;
 
@@ -162,6 +164,8 @@ struct search_plan_impl : public search_plan_impl_base {
     : search_plan_impl_base(params, dim, graph_degree, topk),
       hashmap(res),
       num_executed_iterations(res),
+      graph_metrics_global_distance_calculation_counter1(res),
+      graph_metrics_global_distance_calculation_counter2(res),
       dev_seed(res),
       num_seeds(0),
       dataset_desc(dataset_desc)
@@ -172,6 +176,8 @@ struct search_plan_impl : public search_plan_impl_base {
     if (!persistent) {  // Persistent kernel does not provide this functionality
       num_executed_iterations.resize(max_queries, raft::resource::get_cuda_stream(res));
     }
+    graph_metrics_global_distance_calculation_counter1.resize(1, raft::resource::get_cuda_stream(res));
+    graph_metrics_global_distance_calculation_counter2.resize(1, raft::resource::get_cuda_stream(res));
     RAFT_LOG_DEBUG("# algo = %d", static_cast<int>(algo));
   }
 

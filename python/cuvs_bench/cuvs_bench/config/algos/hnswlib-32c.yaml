@@ -1,4 +1,4 @@
-name: hnswlib
+name: hnswlib-32c
 constraints:
   search: cuvs_bench.config.algos.constraints.hnswlib_search
 groups:
@@ -8,10 +8,4 @@ groups:
       efConstruction: [64, 128, 256, 512]
     search:
       ef: [10, 20, 40, 60, 80, 120, 200, 400, 600, 800]
-  # glove-100-inner recall > 0.95
-  graph_analysis1:
-    build:
-      M: [24]
-      efConstruction: [512]
-    search:
-      ef: [400]
+      num_threads_search: [32]

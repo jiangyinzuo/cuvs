@@ -42,7 +42,8 @@ add_executable(DYNAMIC_BATCHING_EXAMPLE src/dynamic_batching_example.cu)
 add_executable(IVF_FLAT_EXAMPLE src/ivf_flat_example.cu)
 add_executable(IVF_PQ_EXAMPLE src/ivf_pq_example.cu)
 add_executable(VAMANA_EXAMPLE src/vamana_example.cu)
-
+add_executable(GRAPH_ANALYSIS src/graph_analysis.cu)
+# target_compile_options(GRAPH_ANALYSIS PRIVATE -g -O0)
 # `$<TARGET_NAME_IF_EXISTS:conda_env>` is a generator expression that ensures that targets are
 # installed in a conda environment, if one exists
 add_library(rmm_logger OBJECT)
@@ -58,3 +59,4 @@ target_link_libraries(
 target_link_libraries(IVF_PQ_EXAMPLE PRIVATE cuvs::cuvs $<TARGET_NAME_IF_EXISTS:conda_env> rmm_logger)
 target_link_libraries(IVF_FLAT_EXAMPLE PRIVATE cuvs::cuvs $<TARGET_NAME_IF_EXISTS:conda_env> rmm_logger)
 target_link_libraries(VAMANA_EXAMPLE PRIVATE cuvs::cuvs $<TARGET_NAME_IF_EXISTS:conda_env> rmm_logger)
+target_link_libraries(GRAPH_ANALYSIS PRIVATE cuvs::cuvs $<TARGET_NAME_IF_EXISTS:conda_env> rmm_logger)

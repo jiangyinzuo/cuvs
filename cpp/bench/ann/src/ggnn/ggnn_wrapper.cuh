@@ -105,12 +105,15 @@ ggnn<T>::ggnn(Metric metric, int dim, const build_param& param) : algo<T>(metric
   } else if (metric == Metric::kInnerProduct && dim == 96 && param.k_build == 24 && param.k == 10 &&
              param.segment_size == 32) {
     impl_ = std::make_shared<ggnn_impl<T, Cosine, 96, 24, 10, 32>>(metric, dim, param);
-  } else if (metric == Metric::kEuclidean && dim == 100 && param.k_build == 24 &&
-             param.k == 10 && param.segment_size == 32) {
-    impl_ = std::make_shared<ggnn_impl<T, Euclidean, 100, 24, 10, 32>>(metric, dim, param);
-  } else if (metric == Metric::kInnerProduct && dim == 100 && param.k_build == 24 &&
-             param.k == 10 && param.segment_size == 32) {
-    impl_ = std::make_shared<ggnn_impl<T, Cosine, 100, 24, 10, 32>>(metric, dim, param);
+    // glove-100-inner
+  } else if (metric == Metric::kEuclidean && dim == 100 && param.k == 10) {
+    if (param.k_build == 24 && param.segment_size == 32) {
+      impl_ = std::make_shared<ggnn_impl<T, Euclidean, 100, 24, 10, 32>>(metric, dim, param);
+    } else if (param.k_build == 24 && param.segment_size == 64) {
+      impl_ = std::make_shared<ggnn_impl<T, Euclidean, 100, 24, 10, 64>>(metric, dim, param);
+    } else if (param.k_build == 96 && param.segment_size == 64) {
+      impl_ = std::make_shared<ggnn_impl<T, Euclidean, 100, 96, 10, 64>>(metric, dim, param);
+    }
   } else if (metric == Metric::kInnerProduct && dim == 96 && param.k_build == 96 && param.k == 10 &&
              param.segment_size == 64) {
     impl_ = std::make_shared<ggnn_impl<T, Cosine, 96, 96, 10, 64>>(metric, dim, param);
@@ -277,8 +280,7 @@ void ggnn_impl<T, measure, D, KBuild, KQuery, S>::search(
   if (block_dim == 32 && max_iterations == 400 && cache_size == 512 && sorted_size == 256) {
     ggnn_->template queryLayer<32, 400, 512, 256, false>(
       queries, batch_size, reinterpret_cast<int64_t*>(neighbors), distances);
-  }
-  else if (block_dim == 32 && max_iterations == 1000 && cache_size == 512 && sorted_size == 256) {
+  } else if (block_dim == 32 && max_iterations == 1000 && cache_size == 512 && sorted_size == 256) {
     ggnn_->template queryLayer<32, 1000, 512, 256, false>(
       queries, batch_size, reinterpret_cast<int64_t*>(neighbors), distances);
   }

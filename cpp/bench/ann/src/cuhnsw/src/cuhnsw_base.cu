@@ -201,7 +201,7 @@ void CuHNSW::SetRandomLevels(const int* levels) {
 // save graph compatible with hnswlib (https://github.com/nmslib/hnswlib)
 void CuHNSW::SaveIndex(std::string fpath) {
   std::ofstream output(fpath);
-  DEBUG("save index to {}", fpath);
+  INFO("save index to {}", fpath);
   
   // write meta values
   DEBUG0("write meta values"); 
@@ -292,7 +292,7 @@ void CuHNSW::SaveIndex(std::string fpath) {
 // load graph compatible with hnswlib (https://github.com/nmslib/hnswlib)
 void CuHNSW::LoadIndex(std::string fpath) {
   std::ifstream input(fpath, std::ios::binary);
-  DEBUG("load index from {}", fpath);
+  INFO("load index from {}", fpath);
   
   // reqd meta values
   DEBUG0("read meta values"); 

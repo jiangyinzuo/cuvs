@@ -86,6 +86,8 @@ struct search : search_plan_impl<DataT, IndexT, DistanceT, SAMPLE_FILTER_T> {
   using base_type::dev_seed;
   using base_type::hashmap;
   using base_type::num_executed_iterations;
+  using base_type::graph_metrics_global_distance_calculation_counter1;
+  using base_type::graph_metrics_global_distance_calculation_counter2;
   using base_type::num_seeds;
 
   uint32_t num_itopk_candidates;
@@ -245,6 +247,10 @@ struct search : search_plan_impl<DataT, IndexT, DistanceT, SAMPLE_FILTER_T> {
                    small_hash_reset_interval,
                    num_seeds,
                    sample_filter,
+#ifdef _GRAPH_QUALITY_ANALYSIS
+                   graph_metrics_global_distance_calculation_counter1.data(),
+                   graph_metrics_global_distance_calculation_counter2.data(),
+#endif
                    stream);
   }
 };

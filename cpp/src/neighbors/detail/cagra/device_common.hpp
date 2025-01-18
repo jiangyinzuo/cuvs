@@ -19,7 +19,6 @@
 #include "utils.hpp"
 
 #include <cuvs/distance/distance.hpp>
-
 // TODO: This shouldn't be invoking anything in detail APIs outside of cuvs/neighbors
 #include <raft/core/detail/macros.hpp>
 #include <raft/util/cudart_utils.hpp>
@@ -29,6 +28,8 @@
 
 #include <cfloat>
 #include <cstdint>
+
+// #define _GRAPH_QUALITY_ANALYSIS
 
 namespace cuvs::neighbors::cagra::detail {
 namespace device {
@@ -110,6 +111,12 @@ RAFT_DEVICE_INLINE_FUNCTION void compute_distance_to_random_nodes(
   const uint32_t num_seeds,
   IndexT* __restrict__ visited_hash_ptr,
   const uint32_t hash_bitlen,
+#ifdef _GRAPH_QUALITY_ANALYSIS
+  uint64_t* __restrict__ global_distance_calculation_counter1,
+  uint64_t* __restrict__ global_distance_calculation_counter2,
+  uint64_t* __restrict__ local_distance_calculation_counter1,
+  uint64_t* __restrict__ local_distance_calculation_counter2,
+#endif
   const uint32_t block_id   = 0,
   const uint32_t num_blocks = 1)
 {
@@ -153,8 +160,21 @@ RAFT_DEVICE_INLINE_FUNCTION void compute_distance_to_random_nodes(
         result_distances_ptr[i] = raft::upper_bound<DistanceT>();
         result_indices_ptr[i]   = raft::upper_bound<IndexT>();
       }
+#ifdef _GRAPH_QUALITY_ANALYSIS
+      if (blockIdx.x == 0) {  // local CTA ID
+        atomicAdd(global_distance_calculation_counter1, 1UL);
+        atomicAdd(local_distance_calculation_counter1, 1UL);
+      }
+#endif
     }
   }
+#ifdef _GRAPH_QUALITY_ANALYSIS
+  if (threadIdx.x == 0 && blockIdx.x == 0) {  // local CTA ID
+    atomicAdd(global_distance_calculation_counter2, static_cast<uint64_t>(num_pickup));
+    atomicAdd(local_distance_calculation_counter2, static_cast<uint64_t>(num_pickup));
+  }
+  __syncthreads();
+#endif
 }
 
 template <typename IndexT, typename DistanceT, typename DATASET_DESCRIPTOR_T>
@@ -171,7 +191,15 @@ RAFT_DEVICE_INLINE_FUNCTION void compute_distance_to_child_nodes(
   const uint32_t hash_bitlen,
   const IndexT* __restrict__ parent_indices,
   const IndexT* __restrict__ internal_topk_list,
-  const uint32_t search_width)
+  const uint32_t search_width
+#ifdef _GRAPH_QUALITY_ANALYSIS
+  ,
+  uint64_t* __restrict__ global_distance_calculation_counter1,
+  uint64_t* __restrict__ global_distance_calculation_counter2,
+  uint64_t* __restrict__ local_distance_calculation_counter1,
+  uint64_t* __restrict__ local_distance_calculation_counter2
+#endif
+)
 {
   constexpr IndexT index_msb_1_mask = utils::gen_index_msb_1_mask<IndexT>::value;
   constexpr IndexT invalid_index    = raft::upper_bound<IndexT>();
@@ -215,8 +243,23 @@ RAFT_DEVICE_INLINE_FUNCTION void compute_distance_to_child_nodes(
       team_size_bits);
 
     // Store the distance
-    if (valid_i && lead_lane) { result_child_distances_ptr[i] = child_dist; }
+    if (valid_i && lead_lane) {
+      result_child_distances_ptr[i] = child_dist;
+#ifdef _GRAPH_QUALITY_ANALYSIS
+      if (blockIdx.x == 0) {  // local CTA ID
+        atomicAdd(global_distance_calculation_counter1, 1UL);
+        atomicAdd(local_distance_calculation_counter1, 1UL);
+      }
+#endif
+    }
   }
+#ifdef _GRAPH_QUALITY_ANALYSIS
+  if (threadIdx.x == 0 && blockIdx.x == 0) {  // local CTA ID
+    atomicAdd(global_distance_calculation_counter2, static_cast<uint64_t>(num_k));
+    atomicAdd(local_distance_calculation_counter2, static_cast<uint64_t>(num_k));
+  }
+  __syncthreads();
+#endif
 }
 
 RAFT_DEVICE_INLINE_FUNCTION void lds(float& x, uint32_t addr)

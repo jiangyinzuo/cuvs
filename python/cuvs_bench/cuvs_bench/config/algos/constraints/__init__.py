@@ -112,6 +112,9 @@ def cuhnsw_search(params, build_params, k, batch_size):
 
 
 _GGNN_VALID_BUILD_PARAMS = {
+        (100, 24, 10, 32),
+        (100, 24, 10, 64),
+        (100, 96, 10, 64),
         (128, 24, 10, 32),
         (960, 96, 10, 64),
         }

@@ -191,7 +191,9 @@ def create_plot_search(
         handles,
         labels,
         loc="center left",
-        bbox_to_anchor=(0, 0.7),
+        # NOTE(jiangyinzuo): change anchor position
+        # bbox_to_anchor=(0, 0.7),
+        bbox_to_anchor=(1, 0.5),
         prop={"size": 14},
     )
     plt.grid(visible=True, which="major", color="0.65", linestyle="-")
@@ -243,6 +245,10 @@ def create_plot_build(
 
         len_80, len_90, len_95, len_99 = 0, 0, 0, 0
         for i in range(len(xs)):
+            # NOTE(jiangyinzuo): ivf pq may not have some build results
+            if (ls[i], idxs[i]) not in build_results:
+                print("Warning: missing build results for", ls[i], idxs[i])
+                continue
             if xs[i] >= 0.80 and xs[i] < 0.90:
                 bt_80[pos] = bt_80[pos] + build_results[(ls[i], idxs[i])][0][2]
                 len_80 = len_80 + 1

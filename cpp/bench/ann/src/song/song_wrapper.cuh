@@ -247,6 +247,10 @@ void song_impl<metric_type, DIM>::search(const float* queries,
     song_->template search_top_k_batch<90>(queries_vec, k, results, search_param_.finish_cnt);
   } else if (search_param_.pq_size == 100) {
     song_->template search_top_k_batch<100>(queries_vec, k, results, search_param_.finish_cnt);
+  } else if (search_param_.pq_size == 150) {
+    song_->template search_top_k_batch<150>(queries_vec, k, results, search_param_.finish_cnt);
+  } else if (search_param_.pq_size == 200) {
+    song_->template search_top_k_batch<200>(queries_vec, k, results, search_param_.finish_cnt);
   } else {
     throw std::runtime_error("unsupported pq_size");
   }

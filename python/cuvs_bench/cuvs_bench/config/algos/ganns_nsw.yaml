@@ -6,8 +6,8 @@ groups:
   base:
     build:
       hierarchical: [False]
-      num_of_candidates_build: [16, 32, 64]
+      num_of_candidates_build: [32, 64, 128, 256]
       num_of_initial_neighbors: [64]
     search:
-      num_of_candidates_search: [16, 32, 64]
+      num_of_candidates_search: [32, 64, 128, 256]
 

@@ -90,6 +90,8 @@ struct search : public search_plan_impl<DataT, IndexT, DistanceT, SAMPLE_FILTER_
   using base_type::dev_seed;
   using base_type::hashmap;
   using base_type::num_executed_iterations;
+  using base_type::graph_metrics_global_distance_calculation_counter1;
+  using base_type::graph_metrics_global_distance_calculation_counter2;
   using base_type::num_seeds;
 
   uint32_t num_cta_per_query;
@@ -206,7 +208,8 @@ struct search : public search_plan_impl<DataT, IndexT, DistanceT, SAMPLE_FILTER_
                   const INDEX_T* dev_seed_ptr,              // [num_queries, num_seeds]
                   uint32_t* const num_executed_iterations,  // [num_queries,]
                   uint32_t topk,
-                  SAMPLE_FILTER_T sample_filter)
+                  SAMPLE_FILTER_T sample_filter
+  )
   {
     cudaStream_t stream = raft::resource::get_cuda_stream(res);
     select_and_run(dataset_desc,
@@ -227,6 +230,10 @@ struct search : public search_plan_impl<DataT, IndexT, DistanceT, SAMPLE_FILTER_
                    num_cta_per_query,
                    num_seeds,
                    sample_filter,
+#ifdef _GRAPH_QUALITY_ANALYSIS
+                   graph_metrics_global_distance_calculation_counter1.data(),
+                   graph_metrics_global_distance_calculation_counter2.data(),
+#endif
                    stream);
     RAFT_CUDA_TRY(cudaPeekAtLastError());
 

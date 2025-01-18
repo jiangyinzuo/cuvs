@@ -1,9 +1,13 @@
 diff --git a/hnswlib/hnswalg.h b/hnswlib/hnswalg.h
-index bef0017..0ee7931 100644
+index bef0017..d65b538 100644
 --- a/hnswlib/hnswalg.h
 +++ b/hnswlib/hnswalg.h
-@@ -16,6 +16,9 @@ typedef unsigned int linklistsizeint;
- template<typename dist_t>
+@@ -13,9 +13,12 @@ namespace hnswlib {
+ typedef unsigned int tableint;
+ typedef unsigned int linklistsizeint;
+ 
+-template<typename dist_t>
++template<typename dist_t, bool collect_metrics>
  class HierarchicalNSW : public AlgorithmInterface<dist_t> {
   public:
 +    bool base_layer_only = false;
@@ -12,7 +16,109 @@ index bef0017..0ee7931 100644
      static const tableint MAX_LABEL_OPERATION_LOCKS = 65536;
      static const unsigned char DELETE_MARK = 0x01;
  
-@@ -1098,7 +1101,7 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
+@@ -63,6 +66,8 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
+ 
+     mutable std::atomic<long> metric_distance_computations{0};
+     mutable std::atomic<long> metric_hops{0};
++    mutable std::atomic<long> *metric_distance_calculation_per_layers{nullptr};
++    mutable std::atomic<long> metric_search_knn_count{0};
+ 
+     bool allow_replace_deleted_ = false;  // flag to replace deleted elements (marked as deleted) during insertions
+ 
+@@ -291,7 +296,7 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
+     }
+ 
+ 
+-    template <bool has_deletions, bool collect_metrics = false>
++    template <bool has_deletions>
+     std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst>
+     searchBaseLayerST(tableint ep_id, const void *data_point, size_t ef, BaseFilterFunctor* isIdAllowed = nullptr) const {
+         VisitedList *vl = visited_list_pool_->getFreeVisitedList();
+@@ -327,9 +332,10 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
+             int *data = (int *) get_linklist0(current_node_id);
+             size_t size = getListCount((linklistsizeint*)data);
+ //                bool cur_node_deleted = isMarkedDeleted(current_node_id);
+-            if (collect_metrics) {
++            if constexpr (collect_metrics) {
+                 metric_hops++;
+                 metric_distance_computations+=size;
++                metric_distance_calculation_per_layers[0]+=size;
+             }
+ 
+ #ifdef USE_SSE
+@@ -595,6 +601,71 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
+         max_elements_ = new_max_elements;
+     }
+ 
++    void two_hop_analysis_each_layer() const {
++        // 创建一个二维数组来存储每层每个节点的2跳可达节点数
++        // two_hop_counts[level][node_id] = 该节点在该层的2跳可达节点数
++        std::vector<std::vector<int>> two_hop_counts(maxlevel_ + 1, std::vector<int>(cur_element_count, 0));
++
++        // 遍历每一层
++        for (int level = 0; level <= maxlevel_; level++) {
++            // 遍历每个节点
++            for (tableint i = 0; i < cur_element_count; i++) {
++                // 如果节点i的层级小于当前分析层级，跳过
++                if (element_levels_[i] < level) continue;
++
++                // 使用集合记录访问过的节点
++                std::unordered_set<tableint> visited;
++                visited.insert(i);  // 包含起始节点本身
++
++                // 当前层节点列表，初始只有起始节点
++                std::vector<tableint> current_level = {i};
++
++                // 进行2跳遍历
++                for (int hop = 0; hop < 2; hop++) {
++                    std::vector<tableint> next_level;
++                    // 遍历当前层的每个节点
++                    for (tableint node : current_level) {
++                        // 获取当前节点的邻居列表
++                        linklistsizeint *ll_cur = get_linklist_at_level(node, level);
++                        int size = getListCount(ll_cur);
++                        tableint *data = (tableint *)(ll_cur + 1);
++                        
++                        // 遍历所有邻居
++                        for (int j = 0; j < size; j++) {
++                            tableint neighbor = data[j];
++                            // 如果邻居未被访问过
++                            if (visited.find(neighbor) == visited.end()) {
++                                visited.insert(neighbor);  // 标记为已访问
++                                next_level.push_back(neighbor);  // 加入下一跳
++                            }
++                        }
++                    }
++                    // 更新当前层为下一跳节点
++                    current_level = next_level;
++                }
++                // 记录该节点在该层的2跳可达节点数（包括自身）
++                two_hop_counts[level][i] = visited.size();
++            }
++        }
++
++        // 输出每层的统计信息
++        for (int level = 0; level <= maxlevel_; level++) {
++            int total_nodes = 0;  // 该层的总节点数
++            int total_reachable = 0;  // 该层所有节点的2跳可达节点数总和
++
++            // 计算该层的统计值
++            for (tableint i = 0; i < cur_element_count; i++) {
++                if (element_levels_[i] >= level) {
++                    total_nodes++;
++                    total_reachable += two_hop_counts[level][i];
++                }
++            }
++
++            // 计算并输出平均2跳可达节点数
++            double avg_reachable = total_nodes > 0 ? (double)total_reachable / total_nodes : 0;
++            std::cout << "Level " << level << ": Average 2-hop reachable nodes = " << avg_reachable << std::endl;
++        }
++    }
+ 
+     void saveIndex(const std::string &location) {
+         std::ofstream output(location, std::ios::binary);
+@@ -1098,7 +1169,7 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
  
          std::unique_lock <std::mutex> lock_el(link_list_locks_[cur_c]);
          int curlevel = getRandomLevel(mult_);
@@ -21,7 +127,7 @@ index bef0017..0ee7931 100644
              curlevel = level;
  
          element_levels_[cur_c] = curlevel;
-@@ -1116,6 +1119,9 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
+@@ -1116,6 +1187,9 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
          memcpy(getExternalLabeLp(cur_c), &label, sizeof(labeltype));
          memcpy(getDataByInternalId(cur_c), data_point, data_size_);
  
@@ -31,7 +137,7 @@ index bef0017..0ee7931 100644
          if (curlevel) {
              linkLists_[cur_c] = (char *) malloc(size_links_per_element_ * curlevel + 1);
              if (linkLists_[cur_c] == nullptr)
-@@ -1138,7 +1144,7 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
+@@ -1138,7 +1212,7 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
                          tableint *datal = (tableint *) (data + 1);
                          for (int i = 0; i < size; i++) {
                              tableint cand = datal[i];
@@ -40,7 +146,55 @@ index bef0017..0ee7931 100644
                                  throw std::runtime_error("cand error");
                              dist_t d = fstdistfunc_(data_point, getDataByInternalId(cand), dist_func_param_);
                              if (d < curdist) {
-@@ -1188,28 +1194,41 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
+@@ -1179,37 +1253,92 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
+         return cur_c;
+     }
+ 
++    void reset_metrics() const {
++        if constexpr (collect_metrics) {
++            printf("maxlevel_: %d\n", maxlevel_);
++            if (maxlevel_ < 0) {
++                printf("maxlevel_ < 0\n");
++                return;
++            }
++            if (this->metric_distance_calculation_per_layers != nullptr)
++                delete[] this->metric_distance_calculation_per_layers;
++            this->metric_distance_calculation_per_layers = new std::atomic<long>[this->maxlevel_ + 1];
++            for (int i = 0; i <= this->maxlevel_; i++) {
++                this->metric_distance_calculation_per_layers[i] = 0;
++            }
++            fflush(stdout);
++            metric_distance_computations = 0;
++            metric_hops = 0;
++            metric_search_knn_count = 0;
++        }
++    }
++
++    void print_metrics() const {
++        if constexpr (collect_metrics) {
++            if (this->metric_distance_calculation_per_layers == nullptr) {
++              printf("metric_distance_calculation_per_layers is nullptr\n");
++              return;
++            }
++            printf("Distance calculations M_=%lu, maxM_=%lu, maxM0_=%lu, ef_construction_=%lu, ef_=%lu: ", M_, maxM_, maxM0_, ef_construction_, ef_);
++            for (int i = 0; i <= this->maxlevel_; i++) {
++                printf("%ld ", this->metric_distance_calculation_per_layers[i].load());
++            }
++            printf("\nSearch knn calls: %ld, hops: %ld, metric_distance_computations: %ld\n",
++                this->metric_search_knn_count.load(),
++                this->metric_hops.load(),
++                this->metric_distance_computations.load());
++        }
++    }
+ 
+     std::priority_queue<std::pair<dist_t, labeltype >>
+     searchKnn(const void *query_data, size_t k, BaseFilterFunctor* isIdAllowed = nullptr) const {
++        if constexpr (collect_metrics) {
++            this->metric_search_knn_count.fetch_add(1L);
++        }
+         std::priority_queue<std::pair<dist_t, labeltype >> result;
+         if (cur_element_count == 0) return result;
+ 
          tableint currObj = enterpoint_node_;
          dist_t curdist = fstdistfunc_(query_data, getDataByInternalId(enterpoint_node_), dist_func_param_);
  
@@ -73,8 +227,11 @@ index bef0017..0ee7931 100644
 -                metric_distance_computations+=size;
 +                    data = (unsigned int *) get_linklist(currObj, level);
 +                    int size = getListCount(data);
-+                    metric_hops++;
-+                    metric_distance_computations+=size;
++                    if constexpr (collect_metrics) {
++                        metric_hops++;
++                        metric_distance_computations+=size;
++                        metric_distance_calculation_per_layers[level]+=size;
++                    }
 +
 +                    tableint *datal = (tableint *) (data + 1);
 +                    for (int i = 0; i < size; i++) {
@@ -102,6 +259,19 @@ index bef0017..0ee7931 100644
                      }
                  }
              }
+@@ -1217,10 +1346,10 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
+ 
+         std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates;
+         if (num_deleted_) {
+-            top_candidates = searchBaseLayerST<true, true>(
++            top_candidates = searchBaseLayerST<true>(
+                     currObj, query_data, std::max(ef_, k), isIdAllowed);
+         } else {
+-            top_candidates = searchBaseLayerST<false, true>(
++            top_candidates = searchBaseLayerST<false>(
+                     currObj, query_data, std::max(ef_, k), isIdAllowed);
+         }
+ 
 diff --git a/hnswlib/space_l2.h b/hnswlib/space_l2.h
 index 834d19f..0c0af26 100644
 --- a/hnswlib/space_l2.h

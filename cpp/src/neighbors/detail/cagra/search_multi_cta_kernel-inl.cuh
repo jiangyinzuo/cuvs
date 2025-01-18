@@ -156,7 +156,13 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
   const uint32_t min_iteration,
   const uint32_t max_iteration,
   uint32_t* const num_executed_iterations, /* stats */
-  SAMPLE_FILTER_T sample_filter)
+  SAMPLE_FILTER_T sample_filter
+#ifdef _GRAPH_QUALITY_ANALYSIS
+  ,
+  uint64_t* graph_metrics_global_distance_calculation_counter1_ptr,
+  uint64_t* graph_metrics_global_distance_calculation_counter2_ptr
+#endif
+)
 {
   using DATA_T     = typename DATASET_DESCRIPTOR_T::DATA_T;
   using INDEX_T    = typename DATASET_DESCRIPTOR_T::INDEX_T;
@@ -166,6 +172,21 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
   const auto query_id          = blockIdx.y;
   const auto num_cta_per_query = gridDim.x;
   const auto cta_id            = blockIdx.x;  // local CTA ID
+
+#ifdef _GRAPH_QUALITY_ANALYSIS
+  __shared__ uint64_t local_distance_calculation_counter1;
+  __shared__ uint64_t local_distance_calculation_counter2;
+  __syncthreads();
+  if (threadIdx.x == 0 && cta_id == 0) {
+    local_distance_calculation_counter1 = 0;
+    local_distance_calculation_counter2 = 0;
+  }
+  if (threadIdx.x == 0 && cta_id == 0 && query_id == 0) {
+    *graph_metrics_global_distance_calculation_counter1_ptr = 0;
+    *graph_metrics_global_distance_calculation_counter2_ptr = 0;
+  }
+  __syncthreads();
+#endif
 
 #ifdef _CLK_BREAKDOWN
   uint64_t clk_init                 = 0;
@@ -236,6 +257,13 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
                                            num_seeds,
                                            local_visited_hashmap_ptr,
                                            hash_bitlen,
+
+#ifdef _GRAPH_QUALITY_ANALYSIS
+                                           graph_metrics_global_distance_calculation_counter1_ptr,
+                                           graph_metrics_global_distance_calculation_counter2_ptr,
+                                           &local_distance_calculation_counter1,
+                                           &local_distance_calculation_counter2,
+#endif
                                            block_id,
                                            num_blocks);
   __syncthreads();
@@ -276,7 +304,15 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
                                             hash_bitlen,
                                             parent_indices_buffer,
                                             result_indices_buffer,
-                                            search_width);
+                                            search_width
+#ifdef _GRAPH_QUALITY_ANALYSIS
+                                            ,
+                                            graph_metrics_global_distance_calculation_counter1_ptr,
+                                            graph_metrics_global_distance_calculation_counter2_ptr,
+                                            &local_distance_calculation_counter1,
+                                            &local_distance_calculation_counter2
+#endif
+    );
     _CLK_REC(clk_compute_distance);
     __syncthreads();
 
@@ -301,6 +337,29 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
     }
 
     iter++;
+#ifdef _GRAPH_QUALITY_ANALYSIS
+    if (threadIdx.x == 0 && cta_id == 0 && query_id < 10) {
+      for (unsigned _graph_analysis_topk_idx = 0; _graph_analysis_topk_idx < itopk_size;
+           _graph_analysis_topk_idx++) {
+        float result_distance = 0;
+        if constexpr (std::is_same_v<typename DATASET_DESCRIPTOR_T::DISTANCE_T, half>) {
+          result_distance = __half2float(result_distances_buffer[_graph_analysis_topk_idx]);
+        } else {
+          result_distance = static_cast<float>(result_distances_buffer[_graph_analysis_topk_idx]);
+        }
+        printf(
+          "GRAPH: cagra-multi-cta, file: %s, line: %d, query_id: %u, iter: %u, top: %u, idx: %u, "
+          "distance: %f\n",
+          __FILE__,
+          __LINE__,
+          query_id,
+          iter,
+          _graph_analysis_topk_idx + 1,
+          (uint32_t)result_indices_buffer[_graph_analysis_topk_idx],
+          result_distance);
+      }
+    }
+#endif
   }
 
   // Post process for filtering
@@ -360,6 +419,33 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
       clk_topk,
       clk_pickup_parents,
       clk_compute_distance);
+  }
+#endif
+#ifdef _GRAPH_QUALITY_ANALYSIS
+  if (threadIdx.x == 0 && cta_id == 0 && query_id < 10) {
+    printf(
+      "GRAPH: cagra-multi-cta, file: %s, line: %d, query_id: %u, num_executed_iterations: %u, "
+      "min_iteration: %u, max_iteration: %u, local_distance_calculation_counter1: %lu, "
+      "local_distance_calculation_counter2: %lu\n",
+      __FILE__,
+      __LINE__,
+      query_id,
+      iter + 1,
+      min_iteration,
+      max_iteration,
+      local_distance_calculation_counter1,
+      local_distance_calculation_counter2);
+
+    if (cta_id == 0 && query_id == 0) {
+      printf(
+        "GRAPH: cagra-multi-cta, file: %s, line: %d, global_distance_calculation_counter1: %lu, "
+        "global_distance_calculation_counter2: %lu, num_queries: %u\n",
+        __FILE__,
+        __LINE__,
+        *graph_metrics_global_distance_calculation_counter1_ptr,
+        *graph_metrics_global_distance_calculation_counter2_ptr,
+        gridDim.y);
+    }
   }
 #endif
 }
@@ -432,6 +518,10 @@ void select_and_run(const dataset_descriptor_host<DataT, IndexT, DistanceT>& dat
                     uint32_t num_cta_per_query,
                     uint32_t num_seeds,
                     SampleFilterT sample_filter,
+#ifdef _GRAPH_QUALITY_ANALYSIS
+                    uint64_t* graph_metrics_global_distance_calculation_counter1_ptr,
+                    uint64_t* graph_metrics_global_distance_calculation_counter2_ptr,
+#endif
                     cudaStream_t stream)
 {
   auto kernel =
@@ -452,25 +542,37 @@ void select_and_run(const dataset_descriptor_host<DataT, IndexT, DistanceT>& dat
                  num_cta_per_query,
                  num_queries,
                  smem_size);
-
-  kernel<<<grid_dims, block_dims, smem_size, stream>>>(topk_indices_ptr,
-                                                       topk_distances_ptr,
-                                                       dataset_desc.dev_ptr(stream),
-                                                       queries_ptr,
-                                                       graph.data_handle(),
-                                                       graph.extent(1),
-                                                       ps.num_random_samplings,
-                                                       ps.rand_xor_mask,
-                                                       dev_seed_ptr,
-                                                       num_seeds,
-                                                       hashmap_ptr,
-                                                       hash_bitlen,
-                                                       ps.itopk_size,
-                                                       ps.search_width,
-                                                       ps.min_iterations,
-                                                       ps.max_iterations,
-                                                       num_executed_iterations,
-                                                       sample_filter);
+  kernel<<<grid_dims, block_dims, smem_size, stream>>>(
+    topk_indices_ptr,
+    topk_distances_ptr,
+    dataset_desc.dev_ptr(stream),
+    queries_ptr,
+    graph.data_handle(),
+    graph.extent(1),
+    ps.num_random_samplings,
+    ps.rand_xor_mask,
+    dev_seed_ptr,
+    num_seeds,
+    hashmap_ptr,
+    hash_bitlen,
+    ps.itopk_size,
+    ps.search_width,
+    ps.min_iterations,
+    ps.max_iterations,
+    num_executed_iterations,
+    sample_filter
+#ifdef _GRAPH_QUALITY_ANALYSIS
+    ,
+    graph_metrics_global_distance_calculation_counter1_ptr,
+    graph_metrics_global_distance_calculation_counter2_ptr
+#endif
+  );
+#ifdef _GRAPH_QUALITY_ANALYSIS
+  printf("GRAPH: cagra-multi-cta, file: %s, line: %d, num_queries: %u\n",
+         __FILE__,
+         __LINE__,
+         num_queries);
+#endif
 }
 
 }  // namespace multi_cta_search

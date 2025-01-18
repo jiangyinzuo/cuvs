@@ -4,9 +4,9 @@ constraints:
 groups:
   base:
     build:
-      max_m: [24]
-      max_m0: [32]
-      ef_construction: [256]
+      max_m: [24, 32]
+      max_m0: [32, 64]
+      ef_construction: [256, 512]
       heuristic_coef: [0.0]
       save_remains: [False]
       block_dim: [32]
@@ -16,4 +16,4 @@ groups:
       reverse_cand: [False]
       log_level: [2]
     search:
-      ef_search: [10, 20, 40, 60, 80, 120, 200, 400, 600, 800]
+      ef_search: [10, 20, 40, 60, 80, 120, 200, 400, 600, 800, 1200, 1600]

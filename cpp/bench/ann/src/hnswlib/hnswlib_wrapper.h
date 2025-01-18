@@ -39,6 +39,8 @@
 
 namespace cuvs::bench {
 
+constexpr bool collect_metrics = true;
+
 template <typename T>
 struct hnsw_dist_t {
   using type = void;
@@ -106,7 +108,7 @@ class hnsw_lib : public algo<T> {
                               algo_base::index_type* indices,
                               float* distances) const;
 
-  std::shared_ptr<hnswlib::HierarchicalNSW<typename hnsw_dist_t<T>::type>> appr_alg_;
+  std::shared_ptr<hnswlib::HierarchicalNSW<typename hnsw_dist_t<T>::type, collect_metrics>> appr_alg_;
   std::shared_ptr<hnswlib::SpaceInterface<typename hnsw_dist_t<T>::type>> space_;
 
   using algo<T>::metric_;
@@ -147,7 +149,7 @@ void hnsw_lib<T>::build(const T* dataset, size_t nrow)
     space_ = std::make_shared<hnswlib::L2SpaceI<T>>(dim_);
   }
 
-  appr_alg_ = std::make_shared<hnswlib::HierarchicalNSW<typename hnsw_dist_t<T>::type>>(
+  appr_alg_ = std::make_shared<hnswlib::HierarchicalNSW<typename hnsw_dist_t<T>::type, collect_metrics>>(
     space_.get(), nrow, m_, ef_construction_);
 
   thread_pool_                  = std::make_shared<fixed_thread_pool>(num_threads_);
@@ -186,6 +188,7 @@ template <typename T>
 void hnsw_lib<T>::search(
   const T* query, int batch_size, int k, algo_base::index_type* indices, float* distances) const
 {
+  appr_alg_->reset_metrics();
   auto f = [&](int i) {
     // hnsw can only handle a single vector at a time.
     get_search_knn_results(query + i * dim_, k, indices + i * k, distances + i * k);
@@ -197,6 +200,7 @@ void hnsw_lib<T>::search(
       f(i);
     }
   }
+  appr_alg_->print_metrics();
 }
 
 template <typename T>
@@ -218,7 +222,7 @@ void hnsw_lib<T>::load(const std::string& path_to_index)
     space_ = std::make_shared<hnswlib::L2SpaceI<T>>(dim_);
   }
 
-  appr_alg_ = std::make_shared<hnswlib::HierarchicalNSW<typename hnsw_dist_t<T>::type>>(
+  appr_alg_ = std::make_shared<hnswlib::HierarchicalNSW<typename hnsw_dist_t<T>::type, collect_metrics>>(
     space_.get(), path_to_index);
 }
 

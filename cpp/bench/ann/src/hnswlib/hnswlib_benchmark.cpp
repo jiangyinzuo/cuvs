@@ -41,7 +41,7 @@ void parse_search_param(const nlohmann::json& conf,
                         typename cuvs::bench::hnsw_lib<T>::search_param& param)
 {
   param.ef = conf.at("ef");
-  if (conf.contains("num_threads")) { param.num_threads = conf.at("num_threads"); }
+  if (conf.contains("num_threads_search")) { param.num_threads = conf.at("num_threads_search"); }
 }
 
 template <typename T, template <typename> class Algo>
