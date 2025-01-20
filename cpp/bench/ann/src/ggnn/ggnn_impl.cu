@@ -131,12 +131,18 @@ void ggnn_impl<T, measure, D, KBuild, KQuery, S>::load(const std::string& file)
   }
 }
 
-template class ggnn_impl<float, Euclidean, 128, 24, 10, 32>;
 template class ggnn_impl<float, Euclidean, 100, 24, 10, 32>;
 template class ggnn_impl<float, Euclidean, 100, 24, 10, 64>;
 template class ggnn_impl<float, Euclidean, 100, 48, 10, 32>;
 template class ggnn_impl<float, Euclidean, 100, 48, 10, 64>;
 template class ggnn_impl<float, Euclidean, 100, 64, 10, 64>;
 template class ggnn_impl<float, Euclidean, 100, 96, 10, 64>;
+// sift-128
+template class ggnn_impl<float, Euclidean, 128, 24, 10, 32>;
+template class ggnn_impl<float, Euclidean, 128, 24, 10, 64>;
+template class ggnn_impl<float, Euclidean, 128, 48, 10, 32>;
+template class ggnn_impl<float, Euclidean, 128, 48, 10, 64>;
+template class ggnn_impl<float, Euclidean, 128, 64, 10, 64>;
+template class ggnn_impl<float, Euclidean, 128, 96, 10, 64>;
 
 }  // namespace cuvs::bench

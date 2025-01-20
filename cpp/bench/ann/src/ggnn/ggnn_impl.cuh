@@ -95,4 +95,11 @@ extern template class ggnn_impl<float, Euclidean, 100, 48, 10, 32>;
 extern template class ggnn_impl<float, Euclidean, 100, 48, 10, 64>;
 extern template class ggnn_impl<float, Euclidean, 100, 64, 10, 64>;
 extern template class ggnn_impl<float, Euclidean, 100, 96, 10, 64>;
+// sift-128
+extern template class ggnn_impl<float, Euclidean, 128, 24, 10, 32>;
+extern template class ggnn_impl<float, Euclidean, 128, 24, 10, 64>;
+extern template class ggnn_impl<float, Euclidean, 128, 48, 10, 32>;
+extern template class ggnn_impl<float, Euclidean, 128, 48, 10, 64>;
+extern template class ggnn_impl<float, Euclidean, 128, 64, 10, 64>;
+extern template class ggnn_impl<float, Euclidean, 128, 96, 10, 64>;
 }  // namespace cuvs::bench
