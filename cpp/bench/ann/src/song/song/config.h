@@ -118,3 +118,31 @@ struct BloomFilterConfig<200> {
   static constexpr int BLOOM_FILTER_BIT_SHIFT = 9;
   static constexpr int BLOOM_FILTER_NUM_HASH = 9;
 };
+
+template <>
+struct BloomFilterConfig<400> {
+  static constexpr int BLOOM_FILTER_BIT64 = 1024;
+  static constexpr int BLOOM_FILTER_BIT_SHIFT = 10;
+  static constexpr int BLOOM_FILTER_NUM_HASH = 9;
+};
+
+template <>
+struct BloomFilterConfig<800> {
+  static constexpr int BLOOM_FILTER_BIT64 = 2048;
+  static constexpr int BLOOM_FILTER_BIT_SHIFT = 11;
+  static constexpr int BLOOM_FILTER_NUM_HASH = 9;
+};
+
+template <>
+struct BloomFilterConfig<1600> {
+  static constexpr int BLOOM_FILTER_BIT64 = 4096;
+  static constexpr int BLOOM_FILTER_BIT_SHIFT = 12;
+  static constexpr int BLOOM_FILTER_NUM_HASH = 9;
+};
+
+template <>
+struct BloomFilterConfig<3200> {
+  static constexpr int BLOOM_FILTER_BIT64 = 8192;
+  static constexpr int BLOOM_FILTER_BIT_SHIFT = 13;
+  static constexpr int BLOOM_FILTER_NUM_HASH = 9;
+};

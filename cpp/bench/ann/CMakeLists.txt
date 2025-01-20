@@ -310,8 +310,9 @@ endif()
 
 if(CUVS_ANN_BENCH_USE_GGNN)
   include(cmake/thirdparty/get_glog)
+  file(GLOB GGNN_SOURCES "src/ggnn/*.cu")
   ConfigureAnnBench(
-    NAME GGNN PATH src/ggnn/ggnn_benchmark.cu LINKS glog::glog ggnn::ggnn CUDA::curand
+    NAME GGNN PATH ${GGNN_SOURCES} LINKS glog::glog ggnn::ggnn CUDA::curand
   )
 endif()
 
@@ -333,6 +334,7 @@ endif()
 
 if(CUVS_ANN_BENCH_USE_CUHNSW)
   include(cmake/thirdparty/get_json11)
+  set_source_files_properties(src/cuhnsw/cuhnsw_benchmark.cu PROPERTIES COMPILE_OPTIONS "-O0;-g;-G")
   ConfigureAnnBench(
     NAME CUHNSW
     PATH

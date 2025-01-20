@@ -5,7 +5,7 @@ constraints:
 groups:
   base:
     build:
-      k_build: [24, 96]
+      k_build: [24, 48, 64, 96]
       segment_size: [32, 64]
       num_layers: [4]
       tau_build: [0.5]

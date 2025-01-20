@@ -434,7 +434,7 @@ def prepare_indexes(
             continue
 
         index_filename = (
-            index_name if len(index_name) < 128 else str(hash(index_name))
+            index_name if len(index_name) < 1024 else str(hash(index_name))
         )
         index["name"] = index_name
         index["file"] = os.path.join(

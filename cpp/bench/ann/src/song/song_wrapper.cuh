@@ -227,32 +227,56 @@ void song_impl<metric_type, DIM>::search(const float* queries,
     queries_vec.push_back(vec_row);
   }
   results.reserve(batch_size);
-  if (search_param_.pq_size == 10) {
-    song_->template search_top_k_batch<10>(queries_vec, k, results, search_param_.finish_cnt);
-  } else if (search_param_.pq_size == 20) {
-    song_->template search_top_k_batch<20>(queries_vec, k, results, search_param_.finish_cnt);
-  } else if (search_param_.pq_size == 30) {
-    song_->template search_top_k_batch<30>(queries_vec, k, results, search_param_.finish_cnt);
-  } else if (search_param_.pq_size == 40) {
-    song_->template search_top_k_batch<40>(queries_vec, k, results, search_param_.finish_cnt);
-  } else if (search_param_.pq_size == 50) {
-    song_->template search_top_k_batch<50>(queries_vec, k, results, search_param_.finish_cnt);
-  } else if (search_param_.pq_size == 60) {
-    song_->template search_top_k_batch<60>(queries_vec, k, results, search_param_.finish_cnt);
-  } else if (search_param_.pq_size == 70) {
-    song_->template search_top_k_batch<70>(queries_vec, k, results, search_param_.finish_cnt);
-  } else if (search_param_.pq_size == 80) {
-    song_->template search_top_k_batch<80>(queries_vec, k, results, search_param_.finish_cnt);
-  } else if (search_param_.pq_size == 90) {
-    song_->template search_top_k_batch<90>(queries_vec, k, results, search_param_.finish_cnt);
-  } else if (search_param_.pq_size == 100) {
-    song_->template search_top_k_batch<100>(queries_vec, k, results, search_param_.finish_cnt);
-  } else if (search_param_.pq_size == 150) {
-    song_->template search_top_k_batch<150>(queries_vec, k, results, search_param_.finish_cnt);
-  } else if (search_param_.pq_size == 200) {
-    song_->template search_top_k_batch<200>(queries_vec, k, results, search_param_.finish_cnt);
-  } else {
-    throw std::runtime_error("unsupported pq_size");
+  switch (search_param_.pq_size) {
+    case 10:
+      song_->template search_top_k_batch<10>(queries_vec, k, results, search_param_.finish_cnt);
+      break;
+    case 20:
+      song_->template search_top_k_batch<20>(queries_vec, k, results, search_param_.finish_cnt);
+      break;
+    case 30:
+      song_->template search_top_k_batch<30>(queries_vec, k, results, search_param_.finish_cnt);
+      break;
+    case 40:
+      song_->template search_top_k_batch<40>(queries_vec, k, results, search_param_.finish_cnt);
+      break;
+    case 50:
+      song_->template search_top_k_batch<50>(queries_vec, k, results, search_param_.finish_cnt);
+      break;
+    case 60:
+      song_->template search_top_k_batch<60>(queries_vec, k, results, search_param_.finish_cnt);
+      break;
+    case 70:
+      song_->template search_top_k_batch<70>(queries_vec, k, results, search_param_.finish_cnt);
+      break;
+    case 80:
+      song_->template search_top_k_batch<80>(queries_vec, k, results, search_param_.finish_cnt);
+      break;
+    case 90:
+      song_->template search_top_k_batch<90>(queries_vec, k, results, search_param_.finish_cnt);
+      break;
+    case 100:
+      song_->template search_top_k_batch<100>(queries_vec, k, results, search_param_.finish_cnt);
+      break;
+    case 150:
+      song_->template search_top_k_batch<150>(queries_vec, k, results, search_param_.finish_cnt);
+      break;
+    case 200:
+      song_->template search_top_k_batch<200>(queries_vec, k, results, search_param_.finish_cnt);
+      break;
+    case 400:
+      song_->template search_top_k_batch<400>(queries_vec, k, results, search_param_.finish_cnt);
+      break;
+    case 800:
+      song_->template search_top_k_batch<800>(queries_vec, k, results, search_param_.finish_cnt);
+      break;
+    case 1600:
+      song_->template search_top_k_batch<1600>(queries_vec, k, results, search_param_.finish_cnt);
+      break;
+    case 3200:
+      song_->template search_top_k_batch<3200>(queries_vec, k, results, search_param_.finish_cnt);
+      break;
+    default: throw std::runtime_error("unsupported pq_size");
   }
   for (int i = 0; i < batch_size; ++i) {
     for (int j = 0; j < k; ++j) {

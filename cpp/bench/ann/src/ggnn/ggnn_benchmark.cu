@@ -72,8 +72,7 @@ auto create_algo(const std::string& algo_name,
   cuvs::bench::Metric metric = parse_metric(distance);
   std::unique_ptr<cuvs::bench::algo<T>> a;
 
-  if constexpr (std::is_same_v<T, float> || std::is_same_v<T, uint8_t> ||
-                std::is_same_v<T, int8_t>) {
+  if constexpr (std::is_same_v<T, float>) {
     if (algo_name == "ggnn") { a = make_algo<T, cuvs::bench::ggnn>(metric, dim, conf); }
   }
   if (!a) { throw std::runtime_error("invalid algo: '" + algo_name + "'"); }
@@ -100,8 +99,8 @@ auto create_search_param(const std::string& algo_name, const nlohmann::json& con
 }  // namespace cuvs::bench
 
 REGISTER_ALGO_INSTANCE(float);
-REGISTER_ALGO_INSTANCE(std::int8_t);
-REGISTER_ALGO_INSTANCE(std::uint8_t);
+// REGISTER_ALGO_INSTANCE(std::int8_t);
+// REGISTER_ALGO_INSTANCE(std::uint8_t);
 
 #ifdef ANN_BENCH_BUILD_MAIN
 #include "../common/benchmark.hpp"

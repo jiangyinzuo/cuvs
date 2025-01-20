@@ -4,144 +4,60 @@ dataset:
   name: glove-100-inner
   query_file: glove-100-inner/query.fbin
 index:
-- algo: ggnn
-  build_param:
-    k_build: 24
-    segment_size: 32
-    num_layers: 4
-    tau_build: 0.5
-    refine_iterations: 2
-    # GGNN requires to know k during building
-    k_query: 10
-  file: index/glove-100-inner/ggnn/k_build24
-  name: ggnn.k_build24
-  # search_params:
-  # - tau_query: 0.09
-  #   block_dim: 32
-  #   max_iterations: 400
-  #   cache_size: 512
-  #   sorted_size: 256
-  # - tau_query: 0.12
-  #   block_dim: 32
-  #   max_iterations: 400
-  #   cache_size: 512
-  #   sorted_size: 256
-  # - tau_query: 0.18
-  #   block_dim: 32
-  #   max_iterations: 400
-  #   cache_size: 512
-  #   sorted_size: 256
-  # - tau_query: 0.25
-  #   block_dim: 32
-  #   max_iterations: 400
-  #   cache_size: 512
-  #   sorted_size: 256
-  # - tau_query: 0.5
-  #   block_dim: 32
-  #   max_iterations: 400
-  #   cache_size: 512
-  #   sorted_size: 256
-  # - tau_query: 0.8
-  #   block_dim: 32
-  #   max_iterations: 400
-  #   cache_size: 512
-  #   sorted_size: 256
-  # - tau_query: 0.95
-  #   block_dim: 32
-  #   max_iterations: 400
-  #   cache_size: 512
-  #   sorted_size: 256
-  #
-  # - tau_query: 0.09
-  #   block_dim: 128
-  #   max_iterations: 2000
-  #   cache_size: 1024
-  #   sorted_size: 32
-  # - tau_query: 0.12
-  #   block_dim: 128
-  #   max_iterations: 2000
-  #   cache_size: 1024
-  #   sorted_size: 32
-  # - tau_query: 0.18
-  #   block_dim: 128
-  #   max_iterations: 2000
-  #   cache_size: 1024
-  #   sorted_size: 32
-  # - tau_query: 0.25
-  #   block_dim: 128
-  #   max_iterations: 2000
-  #   cache_size: 1024
-  #   sorted_size: 32
-  # - tau_query: 0.5
-  #   block_dim: 128
-  #   max_iterations: 2000
-  #   cache_size: 1024
-  #   sorted_size: 32
-  # - tau_query: 0.8
-  #   block_dim: 128
-  #   max_iterations: 2000
-  #   cache_size: 1024
-  #   sorted_size: 32
-  # - tau_query: 0.95
-  #   block_dim: 128
-  #   max_iterations: 2000
-  #   cache_size: 1024
-  #   sorted_size: 32
-  search_result_file: result/glove-100-inner/ggnn/k_build24
-- algo: cuhnsw
-  build_param:
-    max_m: 24
-    max_m0: 32
-    ef_construction: 256
-    heuristic_coef: 0.0
-    save_remains: False
-    block_dim: 32
-    hyper_threads: 100
-    visited_table_size: 16384
-    visited_list_size: 8192
-    reverse_cand: False
-    log_level: 2
-  file: index/glove-100-inner/cuhnsw/max_m24
-  name: cuhnsw.max_m24
-  search_params:
-  - ef: 10
-  - ef: 20
-  - ef: 40
-  - ef: 60
-  - ef: 80
-  - ef: 120
-  - ef: 200
-  - ef: 400
-  - ef: 600
-  - ef: 800
-  search_result_file: result/glove-100-inner/cuhnsw/max_m24
-- algo: cuhnsw_v2
-  build_param:
-    max_m: 24
-    max_m0: 32
-    ef_construction: 256
-    heuristic_coef: 0.0
-    save_remains: False
-    block_dim: 32
-    hyper_threads: 100
-    visited_table_size: 16384
-    visited_list_size: 8192
-    reverse_cand: False
-    log_level: 2
-  file: index/glove-100-inner/cuhnsw_v2/max_m24
-  name: cuhnsw_v2.max_m24
-  search_params:
-  - ef: 10
-  - ef: 20
-  - ef: 40
-  - ef: 60
-  - ef: 80
-  - ef: 120
-  - ef: 200
-  - ef: 400
-  - ef: 600
-  - ef: 800
-  search_result_file: result/glove-100-inner/cuhnsw_v2/max_m24
+# - algo: cuhnsw
+#   build_param:
+#     max_m: 24
+#     max_m0: 32
+#     ef_construction: 256
+#     heuristic_coef: 0.0
+#     save_remains: False
+#     block_dim: 32
+#     hyper_threads: 100
+#     visited_table_size: 16384
+#     visited_list_size: 8192
+#     reverse_cand: False
+#     log_level: 2
+#   file: index/glove-100-inner/cuhnsw/max_m24
+#   name: cuhnsw.max_m24
+#   search_params:
+#   - ef: 10
+#   - ef: 20
+#   - ef: 40
+#   - ef: 60
+#   - ef: 80
+#   - ef: 120
+#   - ef: 200
+#   - ef: 400
+#   - ef: 600
+#   - ef: 800
+#   search_result_file: result/glove-100-inner/cuhnsw/max_m24
+# - algo: cuhnsw_v2
+#   build_param:
+#     max_m: 24
+#     max_m0: 32
+#     ef_construction: 256
+#     heuristic_coef: 0.0
+#     save_remains: False
+#     block_dim: 32
+#     hyper_threads: 100
+#     visited_table_size: 16384
+#     visited_list_size: 8192
+#     reverse_cand: False
+#     log_level: 2
+#   file: index/glove-100-inner/cuhnsw_v2/max_m24
+#   name: cuhnsw_v2.max_m24
+#   search_params:
+#   - ef: 10
+#   - ef: 20
+#   - ef: 40
+#   - ef: 60
+#   - ef: 80
+#   - ef: 120
+#   - ef: 200
+#   - ef: 400
+#   - ef: 600
+#   - ef: 800
+#   search_result_file: result/glove-100-inner/cuhnsw_v2/max_m24
 - algo: hnswlib
   build_param:
     M: 12
