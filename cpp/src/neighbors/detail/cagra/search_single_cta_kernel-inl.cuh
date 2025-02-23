@@ -20,6 +20,7 @@
 #include "bitonic.hpp"
 #include "compute_distance-ext.cuh"
 #include "device_common.hpp"
+#include "graph_analysis_macros.h"
 #include "hashmap.hpp"
 #include "search_plan.cuh"
 #include "topk_by_radix.cuh"
@@ -33,6 +34,7 @@
 #include <raft/core/resource/device_properties.hpp>
 #include <raft/core/resources.hpp>
 
+#include <cuvs/neighbors/cagra_metrics.cuh>
 #include <cuvs/neighbors/common.hpp>
 
 // TODO: This shouldn't be invoking anything from spatial/knn
@@ -64,8 +66,6 @@
 
 namespace cuvs::neighbors::cagra::detail {
 namespace single_cta_search {
-
-// #define _CLK_BREAKDOWN
 
 template <unsigned TOPK_BY_BITONIC_SORT, class INDEX_T>
 RAFT_DEVICE_INLINE_FUNCTION void pickup_next_parents(std::uint32_t* const terminate_flag,
@@ -538,7 +538,12 @@ __device__ void search_core(
   const std::uint32_t small_hash_bitlen,
   const std::uint32_t small_hash_reset_interval,
   const std::uint32_t query_id,
-  SAMPLE_FILTER_T sample_filter)
+  SAMPLE_FILTER_T sample_filter
+#ifdef _GRAPH_QUALITY_ANALYSIS
+  ,
+  CagraMetrics* cagra_metrics
+#endif
+)
 {
   using LOAD_T = device::LOAD_128BIT_T;
 
@@ -546,14 +551,28 @@ __device__ void search_core(
   using INDEX_T    = typename DATASET_DESCRIPTOR_T::INDEX_T;
   using DISTANCE_T = typename DATASET_DESCRIPTOR_T::DISTANCE_T;
 
+#ifdef _GRAPH_QUALITY_ANALYSIS
+  __shared__ uint64_t local_distance_calculation_counter1;
+  __shared__ uint64_t local_distance_calculation_counter2;
+  __syncthreads();
+  if (threadIdx.x == 0 && blockIdx.x == 0) {
+    local_distance_calculation_counter1 = 0;
+    local_distance_calculation_counter2 = 0;
+  }
+  if (threadIdx.x == 0 && query_id == 0) { cagra_metrics->reset(); }
+  if (METRIC_THREAD_COND()) { atomicAdd(&cagra_metrics->counter_clk_thread, 1UL); }
+  __syncthreads();
+#endif
+
 #ifdef _CLK_BREAKDOWN
-  std::uint64_t clk_init                 = 0;
-  std::uint64_t clk_compute_1st_distance = 0;
-  std::uint64_t clk_topk                 = 0;
-  std::uint64_t clk_reset_hash           = 0;
-  std::uint64_t clk_pickup_parents       = 0;
-  std::uint64_t clk_restore_hash         = 0;
-  std::uint64_t clk_compute_distance     = 0;
+  std::uint64_t clk_init = 0;
+  // std::uint64_t clk_compute_1st_distance = 0;
+  std::uint64_t clk_topk           = 0;
+  std::uint64_t clk_reset_hash     = 0;
+  std::uint64_t clk_pickup_parents = 0;
+  std::uint64_t clk_restore_hash   = 0;
+  // std::uint64_t clk_compute_distance     = 0;
+  std::uint64_t clk_final = 0;
   std::uint64_t clk_start;
 #define _CLK_START() clk_start = clock64()
 #define _CLK_REC(V)  V += clock64() - clk_start;
@@ -610,7 +629,7 @@ __device__ void search_core(
   _CLK_REC(clk_init);
 
   // compute distance to randomly selecting nodes
-  _CLK_START();
+  // _CLK_START();
   const INDEX_T* const local_seed_ptr = seed_ptr ? seed_ptr + (num_seeds * query_id) : nullptr;
   device::compute_distance_to_random_nodes(result_indices_buffer,
                                            result_distances_buffer,
@@ -623,9 +642,16 @@ __device__ void search_core(
                                            local_visited_hashmap_ptr,
                                            hash_bitlen,
                                            (INDEX_T*)nullptr,
-                                           0);
+                                           0
+#ifdef _GRAPH_QUALITY_ANALYSIS
+                                           ,
+                                           cagra_metrics,
+                                           &local_distance_calculation_counter1,
+                                           &local_distance_calculation_counter2
+#endif
+  );
   __syncthreads();
-  _CLK_REC(clk_compute_1st_distance);
+  // _CLK_REC(clk_compute_1st_distance);
 
   std::uint32_t iter = 0;
   while (1) {
@@ -666,6 +692,9 @@ __device__ void search_core(
         }
         hashmap::init(local_visited_hashmap_ptr, hash_bitlen, hash_start_tid);
         _CLK_REC(clk_reset_hash);
+#ifdef _GRAPH_QUALITY_ANALYSIS
+        if (METRIC_THREAD_COND()) { atomicAdd(&cagra_metrics->counter_reset_hash, 1UL); }
+#endif
       }
 
       // topk with bitonic sort
@@ -693,6 +722,9 @@ __device__ void search_core(
         multi_warps_2);
       __syncthreads();
       _CLK_REC(clk_topk);
+#ifdef _GRAPH_QUALITY_ANALYSIS
+      if (METRIC_THREAD_COND()) { atomicAdd(&cagra_metrics->counter_topk_bitonic_sort, 1UL); }
+#endif
     } else {
       _CLK_START();
       // topk with radix block sort
@@ -709,12 +741,18 @@ __device__ void search_core(
         true,
         smem_work_ptr);
       _CLK_REC(clk_topk);
+#ifdef _GRAPH_QUALITY_ANALYSIS
+      if (METRIC_THREAD_COND()) { atomicAdd(&cagra_metrics->counter_topk_radix_sort, 1UL); }
+#endif
 
       // reset small-hash table
       if ((iter + 1) % small_hash_reset_interval == 0) {
         _CLK_START();
         hashmap::init(local_visited_hashmap_ptr, hash_bitlen);
         _CLK_REC(clk_reset_hash);
+#ifdef _GRAPH_QUALITY_ANALYSIS
+        if (METRIC_THREAD_COND()) { atomicAdd(&cagra_metrics->counter_reset_hash, 1UL); }
+#endif
       }
     }
     __syncthreads();
@@ -727,6 +765,9 @@ __device__ void search_core(
       pickup_next_parents<TOPK_BY_BITONIC_SORT, INDEX_T>(
         terminate_flag, parent_list_buffer, result_indices_buffer, internal_topk, search_width);
       _CLK_REC(clk_pickup_parents);
+#ifdef _GRAPH_QUALITY_ANALYSIS
+      if (METRIC_THREAD_COND()) { atomicAdd(&cagra_metrics->counter_pickup_parents, 1UL); }
+#endif
     }
 
     // restore small-hash table by putting internal-topk indices in it
@@ -736,13 +777,16 @@ __device__ void search_core(
       hashmap_restore(
         local_visited_hashmap_ptr, hash_bitlen, result_indices_buffer, internal_topk, first_tid);
       _CLK_REC(clk_restore_hash);
+#ifdef _GRAPH_QUALITY_ANALYSIS
+      if (METRIC_THREAD_COND()) { atomicAdd(&cagra_metrics->counter_restore_hash, 1UL); }
+#endif
     }
     __syncthreads();
 
     if (*terminate_flag && iter >= min_iteration) { break; }
 
     // compute the norms between child nodes and query node
-    _CLK_START();
+    // _CLK_START();
     device::compute_distance_to_child_nodes(result_indices_buffer + internal_topk,
                                             result_distances_buffer + internal_topk,
                                             *dataset_desc,
@@ -754,9 +798,16 @@ __device__ void search_core(
                                             0,
                                             parent_list_buffer,
                                             result_indices_buffer,
-                                            search_width);
+                                            search_width
+#ifdef _GRAPH_QUALITY_ANALYSIS
+                                            ,
+                                            cagra_metrics,
+                                            &local_distance_calculation_counter1,
+                                            &local_distance_calculation_counter2
+#endif
+    );
     __syncthreads();
-    _CLK_REC(clk_compute_distance);
+    // _CLK_REC(clk_compute_distance);
 
     // Filtering
     if constexpr (!std::is_same<SAMPLE_FILTER_T,
@@ -863,6 +914,7 @@ __device__ void search_core(
     __syncthreads();
   }
 
+  _CLK_START();
   for (std::uint32_t i = threadIdx.x; i < top_k; i += blockDim.x) {
     unsigned j  = i + (top_k * query_id);
     unsigned ii = i;
@@ -876,40 +928,85 @@ __device__ void search_core(
   if (threadIdx.x == 0 && num_executed_iterations != nullptr) {
     num_executed_iterations[query_id] = iter + 1;
   }
+  _CLK_REC(clk_final);
 #ifdef _CLK_BREAKDOWN
-  if ((threadIdx.x == 0 || threadIdx.x == blockDim.x - 1) && ((query_id * 3) % gridDim.y < 3)) {
-    printf(
-      "%s:%d "
-      "query, %d, thread, %d"
-      ", init, %lu"
-      ", 1st_distance, %lu"
-      ", topk, %lu"
-      ", reset_hash, %lu"
-      ", pickup_parents, %lu"
-      ", restore_hash, %lu"
-      ", distance, %lu"
-      "\n",
-      __FILE__,
-      __LINE__,
-      query_id,
-      threadIdx.x,
-      clk_init,
-      clk_compute_1st_distance,
-      clk_topk,
-      clk_reset_hash,
-      clk_pickup_parents,
-      clk_restore_hash,
-      clk_compute_distance);
+  if (METRIC_THREAD_COND()) {
+    //   printf(
+    //     "%s:%d "
+    //     "query, %d, thread, %d"
+    //     ", init, %lu"
+    //     ", 1st_distance, %lu"
+    //     ", topk, %lu"
+    //     ", reset_hash, %lu"
+    //     ", pickup_parents, %lu"
+    //     ", restore_hash, %lu"
+    //     ", distance, %lu"
+    //     "\n",
+    //     __FILE__,
+    //     __LINE__,
+    //     query_id,
+    //     threadIdx.x,
+    //     clk_init,
+    //     clk_compute_1st_distance,
+    //     clk_topk,
+    //     clk_reset_hash,
+    //     clk_pickup_parents,
+    //     clk_restore_hash,
+    //     clk_compute_distance);
+    atomicAdd(&cagra_metrics->clk_init, clk_init);
+    // atomicAdd(&cagra_metrics->clk_compute_1st_distance, clk_compute_1st_distance);
+    atomicAdd(&cagra_metrics->clk_topk, clk_topk);
+    atomicAdd(&cagra_metrics->clk_reset_hash, clk_reset_hash);
+    atomicAdd(&cagra_metrics->clk_pickup_parents, clk_pickup_parents);
+    atomicAdd(&cagra_metrics->clk_restore_hash, clk_restore_hash);
+    // atomicAdd(&cagra_metrics->clk_compute_distance, clk_compute_distance);
+    atomicAdd(&cagra_metrics->clk_final, clk_final);
+    atomicAdd(&cagra_metrics->clk_counter, 1UL);
+  }
+#endif
+#ifdef _GRAPH_QUALITY_ANALYSIS
+  if (threadIdx.x == 0 && blockIdx.x == 0) {
+    atomicAdd(&cagra_metrics->global_distance_calculation_counter3,
+              local_distance_calculation_counter1);
+    atomicAdd(&cagra_metrics->global_distance_calculation_counter4,
+              local_distance_calculation_counter2);
+    atomicAdd(&cagra_metrics->global_distance_calculation_counter3_4_counter, 1UL);
+    // printf(
+    //   "GRAPH: cagra-single-cta, file: %s, line: %d, query_id: %u, num_executed_iterations: %u, "
+    //   "min_iteration: %u, max_iteration: %u, local_distance_calculation_counter1: %lu, "
+    //   "local_distance_calculation_counter2: %lu\n",
+    //   __FILE__,
+    //   __LINE__,
+    //   query_id,
+    //   iter + 1,
+    //   min_iteration,
+    //   max_iteration,
+    //   local_distance_calculation_counter1,
+    //   local_distance_calculation_counter2);
+    // if (query_id == 0) {
+    //   printf(
+    //     "GRAPH: cagra-single-cta, file: %s, line: %d, global_distance_calculation_counter1: %lu,
+    //     " "global_distance_calculation_counter2: %lu, num_queries: %u\n",
+    //     __FILE__,
+    //     __LINE__,
+    //     *graph_metrics_global_distance_calculation_counter1_ptr,
+    //     *graph_metrics_global_distance_calculation_counter2_ptr,
+    //     gridDim.y);
+    // }
   }
 #endif
 }
-
+// #undef NDEBUG
 template <unsigned MAX_ITOPK,
           unsigned MAX_CANDIDATES,
           unsigned TOPK_BY_BITONIC_SORT,
           class DATASET_DESCRIPTOR_T,
           class SAMPLE_FILTER_T>
+#ifndef NDEBUG
+RAFT_KERNEL search_kernel(
+#else
 RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
+#endif
   typename DATASET_DESCRIPTOR_T::INDEX_T* const result_indices_ptr,       // [num_queries, top_k]
   typename DATASET_DESCRIPTOR_T::DISTANCE_T* const result_distances_ptr,  // [num_queries, top_k]
   const std::uint32_t top_k,
@@ -931,7 +1028,12 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
   const std::uint32_t hash_bitlen,
   const std::uint32_t small_hash_bitlen,
   const std::uint32_t small_hash_reset_interval,
-  SAMPLE_FILTER_T sample_filter)
+  SAMPLE_FILTER_T sample_filter
+#ifdef _GRAPH_QUALITY_ANALYSIS
+  ,
+  CagraMetrics* cagra_metrics
+#endif
+)
 {
   const auto query_id = blockIdx.y;
   search_core<MAX_ITOPK,
@@ -959,7 +1061,12 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
                                small_hash_bitlen,
                                small_hash_reset_interval,
                                query_id,
-                               sample_filter);
+                               sample_filter
+#ifdef _GRAPH_QUALITY_ANALYSIS
+                               ,
+                               cagra_metrics
+#endif
+  );
 }
 
 // To make sure we avoid false sharing on both CPU and GPU, we enforce cache line size to the
@@ -1026,7 +1133,11 @@ template <unsigned MAX_ITOPK,
           unsigned TOPK_BY_BITONIC_SORT,
           class DATASET_DESCRIPTOR_T,
           class SAMPLE_FILTER_T>
+#ifndef NDEBUG
+RAFT_KERNEL search_kernel_p(
+#else
 RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel_p(
+#endif
   const DATASET_DESCRIPTOR_T* dataset_desc,
   worker_handle_t* worker_handles,
   job_desc_t<DATASET_DESCRIPTOR_T>* job_descriptors,
@@ -1047,7 +1158,12 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel_p(
   const std::uint32_t hash_bitlen,
   const std::uint32_t small_hash_bitlen,
   const std::uint32_t small_hash_reset_interval,
-  SAMPLE_FILTER_T sample_filter)
+  SAMPLE_FILTER_T sample_filter
+#ifdef _GRAPH_QUALITY_ANALYSIS
+  ,
+  CagraMetrics* cagra_metrics
+#endif
+)
 {
   using job_desc_type = job_desc_t<DATASET_DESCRIPTOR_T>;
   __shared__ typename job_desc_type::input_t job_descriptor;
@@ -1115,7 +1231,12 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel_p(
                                  small_hash_bitlen,
                                  small_hash_reset_interval,
                                  query_id,
-                                 sample_filter);
+                                 sample_filter
+#ifdef _GRAPH_QUALITY_ANALYSIS
+                                 ,
+                                 cagra_metrics
+#endif
+    );
 
     // make sure all writes are visible even for the host
     //     (e.g. when result buffers are in pinned memory)
@@ -2039,6 +2160,9 @@ void select_and_run(const dataset_descriptor_host<DataT, IndexT, DistanceT>& dat
                     size_t small_hash_reset_interval,
                     uint32_t num_seeds,
                     SampleFilterT sample_filter,
+#ifdef _GRAPH_QUALITY_ANALYSIS
+                    CagraMetrics* cagra_metrics,
+#endif
                     cudaStream_t stream)
 {
   if (ps.persistent) {
@@ -2098,8 +2222,19 @@ control is returned in this thread (in persistent_runner_t constructor), so we'r
                                                            hash_bitlen,
                                                            small_hash_bitlen,
                                                            small_hash_reset_interval,
-                                                           sample_filter);
+                                                           sample_filter
+#ifdef _GRAPH_QUALITY_ANALYSIS
+                                                           ,
+                                                           cagra_metrics
+#endif
+    );
     RAFT_CUDA_TRY(cudaPeekAtLastError());
+#ifdef _GRAPH_QUALITY_ANALYSIS
+    // printf("GRAPH: cagra-single-cta, file: %s, line: %d, num_queries: %u\n",
+    //        __FILE__,
+    //        __LINE__,
+    //        num_queries);
+#endif
   }
 }
 }  // namespace single_cta_search

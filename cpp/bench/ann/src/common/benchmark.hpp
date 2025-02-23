@@ -313,6 +313,7 @@ void bench_search(::benchmark::State& state,
       state.SkipWithError("Algo::copy: " + std::string(e.what()));
       return;
     }
+    if constexpr (collect_metrics) { a->reset_metrics(); }
     // Initialize with algo, so that the timer.lap() object can sync with algo::get_sync_stream()
     cuda_timer gpu_timer{a};
     auto start = std::chrono::high_resolution_clock::now();
@@ -347,6 +348,10 @@ void bench_search(::benchmark::State& state,
 
     if (gpu_timer.active()) {
       state.counters.insert({"GPU", {gpu_timer.total_time(), benchmark::Counter::kAvgIterations}});
+    }
+    if constexpr (collect_metrics) {
+      state.counters.merge(a->get_custom_counters());
+      a->print_metrics();
     }
   }
 
@@ -413,6 +418,7 @@ void bench_search(::benchmark::State& state,
       out_offset += n_queries;
       batch_offset = (batch_offset + queries_stride) % query_set_size;
     }
+    // std::cout << "match_count: " << match_count << ", total_count: " << total_count << std::endl;
     double actual_recall = static_cast<double>(match_count) / static_cast<double>(total_count);
     /* NOTE: recall in the throughput mode & filtering
 

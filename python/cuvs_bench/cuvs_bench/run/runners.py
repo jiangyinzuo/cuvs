@@ -152,6 +152,12 @@ def cuvs_bench_cpp(
                 "--benchmark_out_format=json",
                 f"--mode={mode}",
                 f"--benchmark_out={os.path.join(search_folder, search_file)}",
+<<<<<<< HEAD
+||||||| bd603a9
+                f"--raft_log_level={parse_log_level(raft_log_level)}",
+=======
+                # f"--raft_log_level={parse_log_level(raft_log_level)}",
+>>>>>>> dev-branch-25.02-hardbd-2025
             ]
             if force:
                 cmd.append("--force")

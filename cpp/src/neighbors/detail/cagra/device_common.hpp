@@ -15,11 +15,11 @@
  */
 #pragma once
 
+#include "graph_analysis_macros.h"
 #include "hashmap.hpp"
 #include "utils.hpp"
-
 #include <cuvs/distance/distance.hpp>
-
+#include <cuvs/neighbors/cagra_metrics.cuh>
 // TODO: This shouldn't be invoking anything in detail APIs outside of cuvs/neighbors
 #include <raft/core/detail/macros.hpp>
 #include <raft/util/cudart_utils.hpp>
@@ -112,6 +112,11 @@ RAFT_DEVICE_INLINE_FUNCTION void compute_distance_to_random_nodes(
   const uint32_t visited_hash_bitlen,
   IndexT* __restrict__ traversed_hash_ptr,
   const uint32_t traversed_hash_bitlen,
+#ifdef _GRAPH_QUALITY_ANALYSIS
+  CagraMetrics* __restrict__ metrics,
+  uint64_t* __restrict__ local_distance_calculation_counter1,
+  uint64_t* __restrict__ local_distance_calculation_counter2,
+#endif
   const uint32_t block_id   = 0,
   const uint32_t num_blocks = 1)
 {
@@ -120,6 +125,9 @@ RAFT_DEVICE_INLINE_FUNCTION void compute_distance_to_random_nodes(
   const auto compute_distance = dataset_desc.compute_distance_impl;
 
   for (uint32_t i = threadIdx.x >> team_size_bits; i < max_i; i += (blockDim.x >> team_size_bits)) {
+#ifdef _CLK_BREAKDOWN
+    uint64_t clk_1st_distance_start = clock64();
+#endif
     const bool valid_i = (i < num_pickup);
 
     IndexT best_index_team_local    = raft::upper_bound<IndexT>();
@@ -145,6 +153,15 @@ RAFT_DEVICE_INLINE_FUNCTION void compute_distance_to_random_nodes(
       }
     }
 
+#ifdef _CLK_BREAKDOWN
+    uint64_t clk_1st_distance_end = clock64();
+    if (METRIC_THREAD_COND()) {
+      atomicAdd(&metrics->clk_compute_1st_distance, clk_1st_distance_end - clk_1st_distance_start);
+    }
+    unsigned long count_insert_hashmap = 0;
+    uint64_t clk_hash_insert_begin     = clock64();
+#endif
+
     const unsigned lane_id = threadIdx.x & ((1u << team_size_bits) - 1u);
     if (valid_i && lane_id == 0) {
       if (best_index_team_local != raft::upper_bound<IndexT>()) {
@@ -162,8 +179,31 @@ RAFT_DEVICE_INLINE_FUNCTION void compute_distance_to_random_nodes(
       }
       result_distances_ptr[i] = best_norm2_team_local;
       result_indices_ptr[i]   = best_index_team_local;
+#ifdef _GRAPH_QUALITY_ANALYSIS
+      ++count_insert_hashmap;
+#endif
     }
+#ifdef _GRAPH_QUALITY_ANALYSIS
+    uint64_t clk_hash_insert_end = clock64();
+    if (METRIC_THREAD_COND()) {
+      atomicAdd(&metrics->clk_insert_hashmap, clk_hash_insert_end - clk_hash_insert_begin);
+      atomicAdd(&metrics->counter_insert_hashmap, count_insert_hashmap);
+    }
+    if (valid_i && lane_id == 0) {
+      if (blockIdx.x == 0) {  // local CTA ID
+        atomicAdd(&metrics->global_distance_calculation_counter1, 1UL);
+        atomicAdd(local_distance_calculation_counter1, 1UL);
+      }
+    }
+#endif
   }
+#ifdef _GRAPH_QUALITY_ANALYSIS
+  if (threadIdx.x == 0 && blockIdx.x == 0) {  // local CTA ID
+    atomicAdd(&metrics->global_distance_calculation_counter2, static_cast<uint64_t>(num_pickup));
+    atomicAdd(local_distance_calculation_counter2, static_cast<uint64_t>(num_pickup));
+  }
+  __syncthreads();
+#endif
 }
 
 template <typename IndexT,
@@ -187,11 +227,23 @@ RAFT_DEVICE_INLINE_FUNCTION void compute_distance_to_child_nodes(
   const IndexT* __restrict__ internal_topk_list,
   const uint32_t search_width,
   int* __restrict__ result_position = nullptr,
-  const int max_result_position     = 0)
+  const int max_result_position     = 0
+#ifdef _GRAPH_QUALITY_ANALYSIS
+  ,
+  CagraMetrics* __restrict__ metrics,
+  uint64_t* __restrict__ local_distance_calculation_counter1,
+  uint64_t* __restrict__ local_distance_calculation_counter2
+  )
+#endif
+)
 {
   constexpr IndexT index_msb_1_mask = utils::gen_index_msb_1_mask<IndexT>::value;
   constexpr IndexT invalid_index    = ~static_cast<IndexT>(0);
 
+#ifdef _GRAPH_QUALITY_ANALYSIS
+  uint64_t count_insert_hashmap = 0;
+  uint64_t clk_start            = clock64();
+#endif
   // Read child indices of parents from knn graph and check if the distance
   // computaiton is necessary.
   for (uint32_t i = threadIdx.x; i < knn_k * search_width; i += blockDim.x) {
@@ -211,6 +263,9 @@ RAFT_DEVICE_INLINE_FUNCTION void compute_distance_to_child_nodes(
         // Deactivate this entry as this has been already used by others.
         child_id = invalid_index;
       }
+#ifdef _GRAPH_QUALITY_ANALYSIS
+      ++count_insert_hashmap;
+#endif
     }
     if (STATIC_RESULT_POSITION) {
       result_child_indices_ptr[i] = child_id;
@@ -219,8 +274,19 @@ RAFT_DEVICE_INLINE_FUNCTION void compute_distance_to_child_nodes(
       result_child_indices_ptr[j] = child_id;
     }
   }
+#ifdef _GRAPH_QUALITY_ANALYSIS
+  uint64_t clk_insert_hashmap = clock64() - clk_start;
+  if (METRIC_THREAD_COND()) {
+    atomicAdd(&metrics->clk_insert_hashmap, clk_insert_hashmap);
+    atomicAdd(&metrics->counter_insert_hashmap, count_insert_hashmap);
+  }
+#endif
   __syncthreads();
 
+#ifdef _GRAPH_QUALITY_ANALYSIS
+  uint64_t temp_local_distance_calculation_counter1 = 0;
+  clk_start                                         = clock64();
+#endif
   // Compute the distance to child nodes
   const auto team_size_bits   = dataset_desc.team_size_bitshift_from_smem();
   const auto num_k            = knn_k * search_width;
@@ -245,8 +311,29 @@ RAFT_DEVICE_INLINE_FUNCTION void compute_distance_to_child_nodes(
     __syncwarp();
 
     // Store the distance
-    if (valid_i && lead_lane) { result_child_distances_ptr[j] = child_dist; }
+    if (valid_i && lead_lane) {
+      result_child_distances_ptr[j] = child_dist;
+#ifdef _GRAPH_QUALITY_ANALYSIS
+      if (blockIdx.x == 0) {  // local CTA ID
+        temp_local_distance_calculation_counter1 += 1;
+      }
+#endif
+    }
   }
+#ifdef _GRAPH_QUALITY_ANALYSIS
+  uint64_t clk_compute_distance = clock64() - clk_start;
+  if (METRIC_THREAD_COND()) { atomicAdd(&metrics->clk_compute_distance, clk_compute_distance); }
+  if (lead_lane && blockIdx.x == 0) {
+    atomicAdd(&metrics->global_distance_calculation_counter1,
+              temp_local_distance_calculation_counter1);
+    atomicAdd(local_distance_calculation_counter1, temp_local_distance_calculation_counter1);
+  }
+  if (threadIdx.x == 0 && blockIdx.x == 0) {  // local CTA ID
+    atomicAdd(&metrics->global_distance_calculation_counter2, static_cast<uint64_t>(num_k));
+    atomicAdd(local_distance_calculation_counter2, static_cast<uint64_t>(num_k));
+  }
+  __syncthreads();
+#endif
 }
 
 RAFT_DEVICE_INLINE_FUNCTION void lds(float& x, uint32_t addr)

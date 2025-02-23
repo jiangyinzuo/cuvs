@@ -97,3 +97,72 @@ def faiss_gpu_ivf_pq_search(params, build_params, k, batch_size):
 def hnswlib_search(params, build_params, k, batch_size):
     if "ef" in params:
         return params["ef"] >= k
+
+
+###############################################################################
+#                              cuhnsw constraints                             #
+###############################################################################
+
+
+def cuhnsw_search(params, build_params, k, batch_size):
+    if "ef_search" in params:
+        return params["ef_search"] >= k
+
+
+_GGNN_VALID_BUILD_PARAMS = {
+        # k_build, segment_size
+        (24, 32),
+        (24, 64),
+        (48, 32),
+        (48, 64),
+        (64, 64),
+        (96, 64),
+        }
+
+
+def ggnn_build(params, dims):
+    return params["segment_size"] > params["k_build"] / 2 and (params["k_build"], params["segment_size"]) in _GGNN_VALID_BUILD_PARAMS
+
+
+_GGNN_VALID_SEARCH_PARAMS = {
+        # block_dim, max_iterations, cache_size, sorted_size
+        (32, 200, 256, 64),
+        (32, 400, 512, 256),
+        (32, 1000, 512, 256),
+        (32, 2000, 2048, 32),
+        (64, 400, 512, 32),
+        (128, 1000, 512, 256),
+        (128, 1000, 1024, 32),
+        (128, 2000, 1024, 32),
+        }
+
+
+def ggnn_search(params, build_params, k, batch_size):
+    return k == build_params["k_query"] and (params["block_dim"], params["max_iterations"], params["cache_size"], params["sorted_size"]) in _GGNN_VALID_SEARCH_PARAMS
+
+###############################################################################
+#                               ganns constraints                             #
+###############################################################################
+
+
+def ganns_build(params, dims):
+    return dims <= 960
+
+
+def ganns_search(params, build_params, k, batch_size):
+    if "num_of_candidates_search" in params:
+        return params["num_of_candidates_search"] >= k
+    return False
+
+
+###############################################################################
+#                               song constraints                              #
+###############################################################################
+
+
+def song_build(params, dims):
+    return True
+
+
+def song_search(params, build_params, k, batch_size):
+    return "pq_size" in params and params["pq_size"] >= k

@@ -20,10 +20,10 @@
 
 #include "compute_distance-ext.cuh"
 #include <cuvs/neighbors/common.hpp>
+#include <cuvs/neighbors/cagra_metrics.cuh>
 #include <raft/core/resource/cuda_stream.hpp>
 // #include "search_single_cta_inst.cuh"
 // #include "topk_for_cagra/topk.h"
-
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resources.hpp>
 
@@ -151,6 +151,7 @@ struct search_plan_impl : public search_plan_impl_base {
 
   lightweight_uvector<INDEX_T> hashmap;
   lightweight_uvector<uint32_t> num_executed_iterations;  // device or managed?
+  lightweight_uvector<CagraMetrics> cagra_metrics;
   lightweight_uvector<INDEX_T> dev_seed;
   dataset_descriptor_host<DataT, IndexT, DistanceT> dataset_desc;
 
@@ -164,6 +165,7 @@ struct search_plan_impl : public search_plan_impl_base {
     : search_plan_impl_base(params, dim, dataset_size, graph_degree, topk),
       hashmap(res),
       num_executed_iterations(res),
+      cagra_metrics(res),
       dev_seed(res),
       num_seeds(0),
       dataset_desc(dataset_desc)
@@ -174,6 +176,7 @@ struct search_plan_impl : public search_plan_impl_base {
     if (!persistent) {  // Persistent kernel does not provide this functionality
       num_executed_iterations.resize(max_queries, raft::resource::get_cuda_stream(res));
     }
+    cagra_metrics.resize(1, raft::resource::get_cuda_stream(res));
     RAFT_LOG_DEBUG("# algo = %d", static_cast<int>(algo));
   }
 

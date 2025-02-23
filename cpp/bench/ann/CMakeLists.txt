@@ -17,22 +17,25 @@ list(APPEND CMAKE_MODULE_PATH "${CUVS_SOURCE_DIR}")
 # ##################################################################################################
 # * benchmark options ------------------------------------------------------------------------------
 
-option(CUVS_ANN_BENCH_USE_FAISS_GPU_FLAT "Include faiss' brute-force knn algorithm in benchmark" ON)
-option(CUVS_ANN_BENCH_USE_FAISS_GPU_IVF_FLAT "Include faiss' ivf flat algorithm in benchmark" ON)
-option(CUVS_ANN_BENCH_USE_FAISS_GPU_IVF_PQ "Include faiss' ivf pq algorithm in benchmark" ON)
-option(CUVS_ANN_BENCH_USE_FAISS_GPU_CAGRA "Include faiss' cagra algorithm in benchmark" ON)
-option(CUVS_ANN_BENCH_USE_FAISS_CPU_FLAT "Include faiss' cpu brute-force algorithm in benchmark" ON)
+option(CUVS_ANN_BENCH_USE_FAISS_GPU_FLAT "Include faiss' brute-force knn algorithm in benchmark" OFF)
+option(CUVS_ANN_BENCH_USE_FAISS_GPU_IVF_FLAT "Include faiss' ivf flat algorithm in benchmark" OFF)
+option(CUVS_ANN_BENCH_USE_FAISS_GPU_IVF_PQ "Include faiss' ivf pq algorithm in benchmark" OFF)
+option(CUVS_ANN_BENCH_USE_FAISS_GPU_CAGRA "Include faiss' cagra algorithm in benchmark" OFF)
+option(CUVS_ANN_BENCH_USE_FAISS_CPU_FLAT "Include faiss' cpu brute-force algorithm in benchmark" OFF)
 option(CUVS_ANN_BENCH_USE_FAISS_CPU_IVF_FLAT "Include faiss' cpu ivf flat algorithm in benchmark"
-       ON
+    OFF
 )
-option(CUVS_ANN_BENCH_USE_FAISS_CPU_IVF_PQ "Include faiss' cpu ivf pq algorithm in benchmark" ON)
+option(CUVS_ANN_BENCH_USE_FAISS_CPU_IVF_PQ "Include faiss' cpu ivf pq algorithm in benchmark" OFF)
 option(CUVS_ANN_BENCH_USE_CUVS_IVF_FLAT "Include cuVS ivf flat algorithm in benchmark" ON)
 option(CUVS_ANN_BENCH_USE_CUVS_IVF_PQ "Include cuVS ivf pq algorithm in benchmark" ON)
 option(CUVS_ANN_BENCH_USE_CUVS_CAGRA "Include cuVS CAGRA in benchmark" ON)
 option(CUVS_ANN_BENCH_USE_CUVS_BRUTE_FORCE "Include cuVS brute force knn in benchmark" ON)
 option(CUVS_ANN_BENCH_USE_CUVS_CAGRA_HNSWLIB "Include cuVS CAGRA with HNSW search in benchmark" ON)
 option(CUVS_ANN_BENCH_USE_HNSWLIB "Include hnsw algorithm in benchmark" ON)
-option(CUVS_ANN_BENCH_USE_GGNN "Include ggnn algorithm in benchmark" OFF)
+option(CUVS_ANN_BENCH_USE_GGNN "Include ggnn algorithm in benchmark" ON)
+option(CUVS_ANN_BENCH_USE_GANNS "Include ganns algorithm in benchmark" ON)
+option(CUVS_ANN_BENCH_USE_SONG "Include song algorithm in benchmark" ON)
+option(CUVS_ANN_BENCH_USE_CUHNSW "Include cuhnsw algorithm in benchmark" ON)
 option(CUVS_ANN_BENCH_USE_CUVS_MG "Include cuVS ann mg algorithm in benchmark" ${BUILD_MG_ALGOS})
 option(CUVS_ANN_BENCH_SINGLE_EXE
        "Make a single executable with benchmark as shared library modules" OFF
@@ -44,9 +47,9 @@ option(CUVS_KNN_BENCH_USE_CUVS_BRUTE_FORCE "Include cuVS brute force knn in benc
 
 find_package(Threads REQUIRED)
 
-set(CUVS_ANN_BENCH_USE_FAISS ON)
-set(CUVS_FAISS_ENABLE_GPU ON)
-set(CUVS_USE_FAISS_STATIC ON)
+set(CUVS_ANN_BENCH_USE_FAISS OFF)
+set(CUVS_FAISS_ENABLE_GPU OFF)
+set(CUVS_USE_FAISS_STATIC OFF)
 
 if(BUILD_CPU_ONLY)
   set(CUVS_FAISS_ENABLE_GPU OFF)
@@ -56,10 +59,13 @@ if(BUILD_CPU_ONLY)
   set(CUVS_ANN_BENCH_USE_CUVS_BRUTE_FORCE OFF)
   set(CUVS_ANN_BENCH_USE_CUVS_CAGRA_HNSWLIB OFF)
   set(CUVS_ANN_BENCH_USE_GGNN OFF)
+  set(CUVS_ANN_BENCH_USE_GANNS OFF)
+  set(CUVS_ANN_BENCH_USE_SONG OFF)
+  set(CUVS_ANN_BENCH_USE_CUHNSW OFF)
   set(CUVS_KNN_BENCH_USE_CUVS_BRUTE_FORCE OFF)
   set(CUVS_ANN_BENCH_USE_CUVS_MG OFF)
 else()
-  set(CUVS_FAISS_ENABLE_GPU ON)
+  set(CUVS_FAISS_ENABLE_GPU OFF)
 endif()
 
 set(CUVS_ANN_BENCH_USE_CUVS OFF)
@@ -87,6 +93,14 @@ if(CUVS_ANN_BENCH_USE_GGNN)
   include(cmake/thirdparty/get_ggnn)
 endif()
 
+# if(CUVS_ANN_BENCH_USE_GANNS)
+#   include(cmake/thirdparty/get_ganns)
+# endif()
+
+# if(CUVS_ANN_BENCH_USE_CUHNSW)
+  # include(cmake/thirdparty/get_cuhnsw)
+# endif()
+
 if(CUVS_ANN_BENCH_USE_FAISS)
   include(cmake/thirdparty/get_faiss)
 endif()
@@ -97,7 +111,7 @@ endif()
 function(ConfigureAnnBench)
 
   set(oneValueArgs NAME)
-  set(multiValueArgs PATH LINKS CXXFLAGS)
+  set(multiValueArgs PATH LINKS CXXFLAGS INCLUDES)
 
   if(NOT BUILD_CPU_ONLY)
     set(GPU_BUILD ON)
@@ -175,6 +189,13 @@ function(ConfigureAnnBench)
   add_dependencies(CUVS_ANN_BENCH_ALL ${BENCH_NAME})
 endfunction()
 
+if(CUVS_FAISS_ENABLE_GPU OR CUVS_ANN_BENCH_SINGLE_EXE)
+  add_library(cuvs_bench_logger OBJECT)
+  target_link_libraries(
+    cuvs_bench_logger PRIVATE rmm::rmm_logger_impl $<TARGET_NAME_IF_EXISTS:raft::raft_logger>
+  )
+endif()
+
 # ##################################################################################################
 # * Configure benchmark targets -------------------------------------------------------------
 
@@ -185,6 +206,10 @@ endif()
 if(CUVS_ANN_BENCH_USE_HNSWLIB)
   ConfigureAnnBench(NAME HNSWLIB PATH src/hnswlib/hnswlib_benchmark.cpp LINKS hnswlib::hnswlib)
 
+  add_executable(HNSWLIB_GRAPH_ANALYSIS src/hnswlib/hnswlib_graph_analysis.cpp)
+  target_link_libraries(
+      HNSWLIB_GRAPH_ANALYSIS PRIVATE hnswlib::hnswlib Threads::Threads
+  )
 endif()
 
 if(CUVS_ANN_BENCH_USE_CUVS_IVF_PQ)
@@ -294,8 +319,50 @@ endif()
 
 if(CUVS_ANN_BENCH_USE_GGNN)
   include(cmake/thirdparty/get_glog)
+  file(GLOB GGNN_SOURCES "src/ggnn/*.cu")
   ConfigureAnnBench(
-    NAME GGNN PATH src/ggnn/ggnn_benchmark.cu LINKS glog::glog ggnn::ggnn CUDA::curand
+    NAME GGNN PATH ${GGNN_SOURCES} LINKS glog::glog ggnn::ggnn CUDA::curand
+  )
+endif()
+
+if(CUVS_ANN_BENCH_USE_GANNS)
+  # set_source_files_properties(src/ganns/ganns_benchmark.cu PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+  # set_source_files_properties(src/ganns/ganns_benchmark.cu PROPERTIES COMPILE_OPTIONS "-L;/usr3/jiangyinzuo_data/GANNS/;-lganns")
+  # find_library(GANNS_LIB ganns PATHS /usr3/jiangyinzuo_data/GANNS/ REQUIRED)
+  ConfigureAnnBench(
+      NAME GANNS PATH src/ganns/ganns_benchmark.cu LINKS CUDA::curand # ${GANNS_LIB}
+  )
+endif()
+
+if(CUVS_ANN_BENCH_USE_SONG)
+  # set_source_files_properties(src/song/song_benchmark.cu PROPERTIES COMPILE_OPTIONS "-O0;-g;-G")
+  file(GLOB SONG_SOURCES "src/song/*.cu")
+  ConfigureAnnBench(
+      NAME SONG PATH src/song/song_benchmark.cu ${SONG_SOURCES}
+  )
+endif()
+
+if(CUVS_ANN_BENCH_USE_CUHNSW)
+  include(cmake/thirdparty/get_json11)
+  find_package(spdlog REQUIRED)
+  set_source_files_properties(src/cuhnsw/cuhnsw_benchmark.cu PROPERTIES COMPILE_OPTIONS "-O0;-g;-G")
+  ConfigureAnnBench(
+    NAME CUHNSW
+    PATH
+    src/cuhnsw/cuhnsw_benchmark.cu
+    src/cuhnsw/src/cuhnsw_base.cu
+    src/cuhnsw/src/cuhnsw_build.cu
+    src/cuhnsw/src/log.cc
+    LINKS json11 CUDA::curand spdlog::spdlog
+    INCLUDES src/cuhnsw/include/
+  )
+  # 为某个特定的源文件（如 foo.cpp）添加编译选项
+  # set_source_files_properties(src/cuhnsw_v2/cuhnsw_v2_benchmark.cu PROPERTIES COMPILE_OPTIONS "-O0;-g;-G")
+  ConfigureAnnBench(
+    NAME CUHNSW_V2
+    PATH
+    src/cuhnsw_v2/cuhnsw_v2_benchmark.cu
+    LINKS CUDA::curand cuvs
   )
 endif()
 

@@ -101,6 +101,8 @@ def create_linestyles(unique_algorithms):
         for algo in unique_algorithms
     )
 
+ALGOS_TO_LABELS = {'cuhnsw_v2': 'cuhnsw-mem-pool', 'cuvs_cagra': 'cagra'}
+
 
 def create_plot_search(
     all_data,
@@ -150,14 +152,14 @@ def create_plot_search(
         )
         handles.append(handle)
 
-        labels.append(algo)
+        labels.append(algo if algo not in ALGOS_TO_LABELS else ALGOS_TO_LABELS[algo])
 
     ax = plt.gca()
     y_description = ym["description"]
     if mode == "latency":
         y_description = y_description.replace("(s)", f"({time_unit})")
-    ax.set_ylabel(y_description)
-    ax.set_xlabel("Recall")
+    ax.set_ylabel(y_description, fontsize=14)
+    ax.set_xlabel("Recall", fontsize=14)
     # Custom scales of the type --x-scale a3
     if x_scale[0] == "a":
         alpha = float(x_scale[1:])
@@ -182,19 +184,22 @@ def create_plot_search(
     else:
         ax.set_xscale(x_scale)
     ax.set_yscale(y_scale)
-    ax.set_title(f"{dataset} k={k} batch_size={batch_size}")
+    ax.set_title(f"{dataset} k={k} batch_size={batch_size}", fontsize=16)
     plt.gca().get_position()
     # plt.gca().set_position([box.x0, box.y0, box.width * 0.8, box.height])
     ax.legend(
         handles,
         labels,
         loc="center left",
+        # NOTE(jiangyinzuo): change anchor position
+        # bbox_to_anchor=(0, 0.7),
         bbox_to_anchor=(1, 0.5),
-        prop={"size": 9},
+        prop={"size": 14},
     )
     plt.grid(visible=True, which="major", color="0.65", linestyle="-")
     plt.setp(ax.get_xminorticklabels(), visible=True)
-
+    plt.xticks(fontsize=14)
+    plt.yticks(fontsize=14)
     # Logit scale has to be a subset of (0,1)
     if "lim" in xm and x_scale != "logit":
         x0, x1 = xm["lim"]
@@ -206,7 +211,6 @@ def create_plot_search(
 
     # Workaround for bug https://github.com/matplotlib/matplotlib/issues/6789
     ax.spines["bottom"]._adjust_location()
-
     print(f"writing search output to {fn_out}")
     plt.savefig(fn_out, bbox_inches="tight")
     plt.close()
@@ -241,6 +245,10 @@ def create_plot_build(
 
         len_80, len_90, len_95, len_99 = 0, 0, 0, 0
         for i in range(len(xs)):
+            # NOTE(jiangyinzuo): ivf pq may not have some build results
+            if (ls[i], idxs[i]) not in build_results:
+                print("Warning: missing build results for", ls[i], idxs[i])
+                continue
             if xs[i] >= 0.80 and xs[i] < 0.90:
                 bt_80[pos] = bt_80[pos] + build_results[(ls[i], idxs[i])][0][2]
                 len_80 = len_80 + 1
@@ -261,13 +269,14 @@ def create_plot_build(
             bt_95[pos] = bt_95[pos] / len_95
         if len_99 > 0:
             bt_99[pos] = bt_99[pos] / len_99
-        data[algo] = [
+        label = (algo if algo not in ALGOS_TO_LABELS else ALGOS_TO_LABELS[algo])
+        data[label] = [
             bt_80[pos],
             bt_90[pos],
             bt_95[pos],
             bt_99[pos],
         ]
-        colors[algo] = linestyles[algo][0]
+        colors[label] = linestyles[algo][0]
 
     index = [
         "@80% Recall",

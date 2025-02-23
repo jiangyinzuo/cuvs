@@ -29,6 +29,8 @@
 
 namespace cuvs::neighbors::hnsw::detail {
 
+constexpr bool collect_metrics = false;
+
 // This is needed as hnswlib hardcodes the distance type to float
 // or int32_t in certain places. However, we can solve uint8 or int8
 // natively with the pacth cuVS applies. We could potentially remove
@@ -96,7 +98,7 @@ struct index_impl : index<T> {
   /**
   @brief Set index
    */
-  void set_index(std::unique_ptr<hnswlib::HierarchicalNSW<typename hnsw_dist_t<T>::type>>&& index)
+  void set_index(std::unique_ptr<hnswlib::HierarchicalNSW<typename hnsw_dist_t<T>::type, collect_metrics>>&& index)
   {
     appr_alg_ = std::move(index);
   }
@@ -110,7 +112,7 @@ struct index_impl : index<T> {
   }
 
  private:
-  std::unique_ptr<hnswlib::HierarchicalNSW<typename hnsw_dist_t<T>::type>> appr_alg_;
+  std::unique_ptr<hnswlib::HierarchicalNSW<typename hnsw_dist_t<T>::type, collect_metrics>> appr_alg_;
   std::unique_ptr<hnswlib::SpaceInterface<typename hnsw_dist_t<T>::type>> space_;
 };
 
@@ -170,7 +172,7 @@ std::enable_if_t<hierarchy == HnswHierarchy::CPU, std::unique_ptr<index<T>>> fro
   // build upper layers of hnsw index
   int dim         = host_dataset_view.extent(1);
   auto hnsw_index = std::make_unique<index_impl<T>>(dim, cagra_index.metric(), hierarchy);
-  auto appr_algo  = std::make_unique<hnswlib::HierarchicalNSW<typename hnsw_dist_t<T>::type>>(
+  auto appr_algo  = std::make_unique<hnswlib::HierarchicalNSW<typename hnsw_dist_t<T>::type, collect_metrics>>(
     hnsw_index->get_space(),
     host_dataset_view.extent(0),
     cagra_index.graph().extent(1) / 2,
@@ -217,7 +219,7 @@ std::enable_if_t<hierarchy == HnswHierarchy::CPU, std::unique_ptr<index<T>>> fro
 }
 
 template <typename T, typename DistT>
-int initialize_point_in_hnsw(hnswlib::HierarchicalNSW<DistT>* appr_algo,
+int initialize_point_in_hnsw(hnswlib::HierarchicalNSW<DistT, collect_metrics>* appr_algo,
                              raft::host_matrix_view<const T, int64_t, raft::row_major> dataset,
                              int64_t real_index,
                              int curlevel)
@@ -290,7 +292,7 @@ std::enable_if_t<hierarchy == HnswHierarchy::GPU, std::unique_ptr<index<T>>> fro
   // initialize hnsw index
   auto hnsw_index =
     std::make_unique<index_impl<T>>(host_dataset_view.extent(1), cagra_index.metric(), hierarchy);
-  auto appr_algo = std::make_unique<hnswlib::HierarchicalNSW<typename hnsw_dist_t<T>::type>>(
+  auto appr_algo = std::make_unique<hnswlib::HierarchicalNSW<typename hnsw_dist_t<T>::type, collect_metrics>>(
     hnsw_index->get_space(),
     host_dataset_view.extent(0),
     cagra_index.graph().extent(1) / 2,
@@ -436,7 +438,7 @@ void extend(raft::resources const& res,
             raft::host_matrix_view<const T, int64_t, raft::row_major> additional_dataset,
             index<T>& idx)
 {
-  auto* hnswlib_index = reinterpret_cast<hnswlib::HierarchicalNSW<typename hnsw_dist_t<T>::type>*>(
+  auto* hnswlib_index = reinterpret_cast<hnswlib::HierarchicalNSW<typename hnsw_dist_t<T>::type, collect_metrics>*>(
     const_cast<void*>(idx.get_index()));
   auto current_element_count = hnswlib_index->getCurrentElementCount();
   auto new_element_count     = additional_dataset.extent(0);
@@ -452,7 +454,7 @@ void extend(raft::resources const& res,
 }
 
 template <typename T>
-void get_search_knn_results(hnswlib::HierarchicalNSW<typename hnsw_dist_t<T>::type> const* idx,
+void get_search_knn_results(hnswlib::HierarchicalNSW<typename hnsw_dist_t<T>::type, collect_metrics> const* idx,
                             const T* query,
                             int k,
                             uint64_t* indices,
@@ -487,7 +489,7 @@ void search(raft::resources const& res,
 
   idx.set_ef(params.ef);
   auto const* hnswlib_index =
-    reinterpret_cast<hnswlib::HierarchicalNSW<typename hnsw_dist_t<T>::type> const*>(
+    reinterpret_cast<hnswlib::HierarchicalNSW<typename hnsw_dist_t<T>::type, collect_metrics> const*>(
       idx.get_index());
 
   // when num_threads == 0, automatically maximize parallelism
@@ -515,7 +517,7 @@ void search(raft::resources const& res,
 template <typename T>
 void serialize(raft::resources const& res, const std::string& filename, const index<T>& idx)
 {
-  auto* hnswlib_index = reinterpret_cast<hnswlib::HierarchicalNSW<typename hnsw_dist_t<T>::type>*>(
+  auto* hnswlib_index = reinterpret_cast<hnswlib::HierarchicalNSW<typename hnsw_dist_t<T>::type, collect_metrics>*>(
     const_cast<void*>(idx.get_index()));
   hnswlib_index->saveIndex(filename);
 }
@@ -529,7 +531,7 @@ void deserialize(raft::resources const& res,
                  index<T>** idx)
 {
   auto hnsw_index = std::make_unique<index_impl<T>>(dim, metric, params.hierarchy);
-  auto appr_algo  = std::make_unique<hnswlib::HierarchicalNSW<typename hnsw_dist_t<T>::type>>(
+  auto appr_algo  = std::make_unique<hnswlib::HierarchicalNSW<typename hnsw_dist_t<T>::type, collect_metrics>>(
     hnsw_index->get_space(), filename);
   if (params.hierarchy == HnswHierarchy::NONE) { appr_algo->base_layer_only = true; }
   hnsw_index->set_index(std::move(appr_algo));

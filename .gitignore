@@ -86,3 +86,8 @@ datasets/
 
 # java
 .classpath
+*.json
+
+*.vim
+.gdbinit
+*.png

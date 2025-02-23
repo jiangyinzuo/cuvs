@@ -59,7 +59,7 @@ option(BUILD_CAGRA_HNSWLIB "Build CAGRA+hnswlib interface" ON)
 option(BUILD_MG_ALGOS "Build with multi-GPU support" ON)
 option(CUDA_ENABLE_KERNELINFO "Enable kernel resource usage info" OFF)
 option(CUDA_ENABLE_LINEINFO
-       "Enable the -lineinfo option for nvcc (useful for cuda-memcheck / profiler)" OFF
+    "Enable the -lineinfo option for nvcc (useful for cuda-memcheck / profiler)" ON
 )
 option(CUDA_STATIC_RUNTIME "Statically link the CUDA runtime" OFF)
 option(CUDA_STATIC_MATH_LIBRARIES "Statically link the CUDA math libraries" OFF)
@@ -105,6 +105,12 @@ message(VERBOSE "cuVS: Enable nvtx markers: ${CUVS_NVTX}")
 message(VERBOSE "cuVS: Statically link the CUDA runtime: ${CUDA_STATIC_RUNTIME}")
 message(VERBOSE "cuVS: Statically link the CUDA math libraries: ${CUDA_STATIC_MATH_LIBRARIES}")
 message(VERBOSE "cuVS: Build and statically link RAFT libraries: ${CUVS_USE_RAFT_STATIC}")
+
+find_program(CCACHE_PROGRAM ccache)
+if(CCACHE_PROGRAM)
+    set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+    set(CMAKE_CUDA_COMPILER_LAUNCHER "${CCACHE_PROGRAM}") # CMake 3.9+
+endif()
 
 # Set RMM logging level
 set(RMM_LOGGING_LEVEL
@@ -271,6 +277,13 @@ if(BUILD_SHARED_LIBS)
 
   file(GLOB_RECURSE compute_distance_sources "src/neighbors/detail/cagra/compute_distance_*.cu")
   set_source_files_properties(${compute_distance_sources} PROPERTIES COMPILE_FLAGS -maxrregcount=64)
+  # maxrregcount=64 compile error in debug mode
+  # set_source_files_properties(${compute_distance_sources}
+  #       src/neighbors/cagra_search_float.cu
+  #       src/neighbors/cagra_search_half.cu
+  #       src/neighbors/cagra_search_int8.cu
+  #       src/neighbors/cagra_search_uint8.cu
+  #     PROPERTIES COMPILE_OPTIONS "-O0;-g;-G;-maxrregcount=255")
 
   set_target_properties(
     cuvs-cagra-search
@@ -290,6 +303,7 @@ if(BUILD_SHARED_LIBS)
   target_compile_options(
     cuvs-cagra-search PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:${CUVS_CXX_FLAGS}>"
                               "$<$<COMPILE_LANGUAGE:CUDA>:${CUVS_CUDA_FLAGS}>"
+                              # "-O0;-g;-G"
   )
 
   if(BUILD_MG_ALGOS)
@@ -400,6 +414,8 @@ if(BUILD_SHARED_LIBS)
     src/neighbors/cagra_merge_half.cu
     src/neighbors/cagra_merge_int8.cu
     src/neighbors/cagra_merge_uint8.cu
+    src/neighbors/cuhnsw_v2/cuhnsw_base.cu
+    src/neighbors/cuhnsw_v2/cuhnsw_build.cu
     src/neighbors/iface/iface_cagra_float_uint32_t.cu
     src/neighbors/iface/iface_cagra_half_uint32_t.cu
     src/neighbors/iface/iface_cagra_int8_t_uint32_t.cu
@@ -485,6 +501,10 @@ if(BUILD_SHARED_LIBS)
     src/stats/trustworthiness_score.cu
     ${CUVS_MG_ALGOS}
   )
+  # set_source_files_properties(
+  #   src/neighbors/cuhnsw_v2/cuhnsw_base.cu
+  #   src/neighbors/cuhnsw_v2/cuhnsw_build.cu
+  #   PROPERTIES COMPILE_OPTIONS "-O0;-g;-G")
 
   set_target_properties(
     cuvs_objs

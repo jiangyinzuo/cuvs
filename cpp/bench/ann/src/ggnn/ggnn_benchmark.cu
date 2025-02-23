@@ -31,12 +31,12 @@ template <typename T>
 void parse_build_param(const nlohmann::json& conf,
                        typename cuvs::bench::ggnn<T>::build_param& param)
 {
-  param.k = conf.at("k");
+  param.k = conf.at("k_query");
 
   if (conf.contains("k_build")) { param.k_build = conf.at("k_build"); }
   if (conf.contains("segment_size")) { param.segment_size = conf.at("segment_size"); }
   if (conf.contains("num_layers")) { param.num_layers = conf.at("num_layers"); }
-  if (conf.contains("tau")) { param.tau = conf.at("tau"); }
+  if (conf.contains("tau_build")) { param.tau_build = conf.at("tau_build"); }
   if (conf.contains("refine_iterations")) {
     param.refine_iterations = conf.at("refine_iterations");
   }
@@ -46,7 +46,7 @@ template <typename T>
 void parse_search_param(const nlohmann::json& conf,
                         typename cuvs::bench::ggnn<T>::search_param& param)
 {
-  param.tau = conf.at("tau");
+  param.tau_query = conf.at("tau_query");
 
   if (conf.contains("block_dim")) { param.block_dim = conf.at("block_dim"); }
   if (conf.contains("max_iterations")) { param.max_iterations = conf.at("max_iterations"); }
@@ -72,8 +72,7 @@ auto create_algo(const std::string& algo_name,
   cuvs::bench::Metric metric = parse_metric(distance);
   std::unique_ptr<cuvs::bench::algo<T>> a;
 
-  if constexpr (std::is_same_v<T, float> || std::is_same_v<T, uint8_t> ||
-                std::is_same_v<T, int8_t>) {
+  if constexpr (std::is_same_v<T, float>) {
     if (algo_name == "ggnn") { a = make_algo<T, cuvs::bench::ggnn>(metric, dim, conf); }
   }
   if (!a) { throw std::runtime_error("invalid algo: '" + algo_name + "'"); }
@@ -100,8 +99,8 @@ auto create_search_param(const std::string& algo_name, const nlohmann::json& con
 }  // namespace cuvs::bench
 
 REGISTER_ALGO_INSTANCE(float);
-REGISTER_ALGO_INSTANCE(std::int8_t);
-REGISTER_ALGO_INSTANCE(std::uint8_t);
+// REGISTER_ALGO_INSTANCE(std::int8_t);
+// REGISTER_ALGO_INSTANCE(std::uint8_t);
 
 #ifdef ANN_BENCH_BUILD_MAIN
 #include "../common/benchmark.hpp"
