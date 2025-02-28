@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2024, NVIDIA CORPORATION.
+# Copyright (c) 2024-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -166,3 +166,24 @@ def song_build(params, dims):
 
 def song_search(params, build_params, k, batch_size):
     return "pq_size" in params and params["pq_size"] >= k
+
+
+###############################################################################
+#                              DiskANN constraints                            #
+###############################################################################
+
+
+def diskann_memory_build(params, dim):
+    ret = True
+    if "R" in params and "L_build" in params:
+        ret = params["R"] <= params["L_build"]
+    return ret
+
+
+def diskann_ssd_build(params, dim):
+    ret = True
+    if "R" in params and "L_build" in params:
+        ret = params["R"] <= params["L_build"]
+    if "QD" in params:
+        ret = params["QD"] <= dim
+    return ret

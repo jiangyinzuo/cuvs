@@ -1,5 +1,5 @@
 # =============================================================================
-# Copyright (c) 2024, NVIDIA CORPORATION.
+# Copyright (c) 2024-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
 # in compliance with the License. You may obtain a copy of the License at
@@ -36,6 +36,12 @@ option(CUVS_ANN_BENCH_USE_GGNN "Include ggnn algorithm in benchmark" ON)
 option(CUVS_ANN_BENCH_USE_GANNS "Include ganns algorithm in benchmark" ON)
 option(CUVS_ANN_BENCH_USE_SONG "Include song algorithm in benchmark" ON)
 option(CUVS_ANN_BENCH_USE_CUHNSW "Include cuhnsw algorithm in benchmark" ON)
+option(CUVS_ANN_BENCH_USE_DISKANN "Include DISKANN search in benchmark" ON)
+option(CUVS_ANN_BENCH_USE_CUVS_VAMANA "Include cuVS Vamana with DiskANN search in benchmark" ON)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "(ARM|arm|aarch64)")
+  set(CUVS_ANN_BENCH_USE_DISKANN OFF)
+  set(CUVS_ANN_BENCH_USE_CUVS_VAMANA OFF)
+endif()
 option(CUVS_ANN_BENCH_USE_CUVS_MG "Include cuVS ann mg algorithm in benchmark" ${BUILD_MG_ALGOS})
 option(CUVS_ANN_BENCH_SINGLE_EXE
        "Make a single executable with benchmark as shared library modules" OFF
@@ -64,6 +70,7 @@ if(BUILD_CPU_ONLY)
   set(CUVS_ANN_BENCH_USE_CUHNSW OFF)
   set(CUVS_KNN_BENCH_USE_CUVS_BRUTE_FORCE OFF)
   set(CUVS_ANN_BENCH_USE_CUVS_MG OFF)
+  set(CUVS_ANN_BENCH_USE_CUVS_VAMANA OFF)
 else()
   set(CUVS_FAISS_ENABLE_GPU OFF)
 endif()
@@ -76,6 +83,7 @@ if(CUVS_ANN_BENCH_USE_CUVS_IVF_PQ
    OR CUVS_ANN_BENCH_USE_CUVS_CAGRA_HNSWLIB
    OR CUVS_KNN_BENCH_USE_CUVS_BRUTE_FORCE
    OR CUVS_ANN_BENCH_USE_CUVS_MG
+   OR CUVS_ANN_BENCH_USE_CUVS_VAMANA
 )
   set(CUVS_ANN_BENCH_USE_CUVS ON)
 endif()
@@ -100,6 +108,10 @@ endif()
 # if(CUVS_ANN_BENCH_USE_CUHNSW)
   # include(cmake/thirdparty/get_cuhnsw)
 # endif()
+
+if(CUVS_ANN_BENCH_USE_DISKANN OR CUVS_ANN_BENCH_USE_CUVS_VAMANA)
+  include(cmake/thirdparty/get_diskann)
+endif()
 
 if(CUVS_ANN_BENCH_USE_FAISS)
   include(cmake/thirdparty/get_faiss)
@@ -374,6 +386,19 @@ if(CUVS_ANN_BENCH_USE_CUHNSW)
       CUHNSW_GRAPH_ANALYSIS PRIVATE json11 CUDA::curand spdlog::spdlog
   )
   target_include_directories(CUHNSW_GRAPH_ANALYSIS PRIVATE src/cuhnsw/include/)
+endif()
+
+if(CUVS_ANN_BENCH_USE_DISKANN)
+  ConfigureAnnBench(
+    NAME DISKANN_MEMORY PATH src/diskann/diskann_benchmark.cpp LINKS diskann::diskann aio
+  )
+  ConfigureAnnBench(
+    NAME DISKANN_SSD PATH src/diskann/diskann_benchmark.cpp LINKS diskann::diskann aio
+  )
+endif()
+
+if(CUVS_ANN_BENCH_USE_CUVS_VAMANA)
+  ConfigureAnnBench(NAME CUVS_VAMANA PATH src/cuvs/cuvs_vamana.cu LINKS cuvs diskann::diskann aio)
 endif()
 
 # ##################################################################################################
