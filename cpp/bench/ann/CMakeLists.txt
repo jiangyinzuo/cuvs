@@ -364,6 +364,16 @@ if(CUVS_ANN_BENCH_USE_CUHNSW)
     src/cuhnsw_v2/cuhnsw_v2_benchmark.cu
     LINKS CUDA::curand cuvs
   )
+  add_executable(CUHNSW_GRAPH_ANALYSIS
+      src/cuhnsw/cuhnsw_graph_analysis.cu
+      src/cuhnsw/src/cuhnsw_base.cu
+      src/cuhnsw/src/cuhnsw_build.cu
+      src/cuhnsw/src/log.cc
+  )
+  target_link_libraries(
+      CUHNSW_GRAPH_ANALYSIS PRIVATE json11 CUDA::curand spdlog::spdlog
+  )
+  target_include_directories(CUHNSW_GRAPH_ANALYSIS PRIVATE src/cuhnsw/include/)
 endif()
 
 # ##################################################################################################

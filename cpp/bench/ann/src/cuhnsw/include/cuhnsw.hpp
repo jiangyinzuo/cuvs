@@ -103,6 +103,8 @@ class CuHNSW {
     }
     level_graphs_[0].set_dev_data_if_nullptr(max_m0_);
   }
+  std::vector<LevelGraph> level_graphs_;
+  std::vector<int> levels_;
  private:
   void GetDeviceInfo();
   void GetEntryPointsBuild(const std::vector<int>& nodes,
@@ -122,8 +124,6 @@ class CuHNSW {
                               int max_m,
                               bool postprocess);
   void BuildLevelGraph(int level);
-  std::vector<LevelGraph> level_graphs_;
-  std::vector<int> levels_;
 
   // json11::Json opt_;
   std::shared_ptr<spdlog::logger> logger_;

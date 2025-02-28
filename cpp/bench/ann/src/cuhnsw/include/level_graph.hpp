@@ -118,6 +118,10 @@ class LevelGraph {
     logger_->info("set_dev_data_if_nullptr. upper_size={} ", upper_size);
   }
 
+  int NumNodes() const {
+    return num_nodes_;
+  }
+
  private:
   std::shared_ptr<spdlog::logger> logger_;
   std::vector<int> nodes_;

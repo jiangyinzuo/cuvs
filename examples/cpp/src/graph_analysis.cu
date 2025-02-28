@@ -51,7 +51,7 @@ void two_hop_analysis(const IdxT *graph, const int degree, const int num_nodes) 
       if (graph[i * degree + j] >= num_nodes) {
         std::cout << "starts from 1!!!" << std::endl;
       } else if (graph[i * degree + j] == num_nodes - 1) {
-        std::cout << "found max Idx" << std::endl;
+        // std::cout << "found max Idx" << std::endl;
       }
       one_hop[i].insert(graph[i * degree + j]);
     }
@@ -73,11 +73,11 @@ void two_hop_analysis(const IdxT *graph, const int degree, const int num_nodes) 
     two_hop_count_hist[two_hop_count[i]]++;
     two_hop_count_sum += two_hop_neighbors.size();
     if (!show_a_min_2hop_example && two_hop_count[i] == degree - 1) {
-      std::cout << "node " << i << " has (degree - 1) 2-hop neighbors: ";
-      for (auto &neighbor : two_hop_neighbors) {
-        std::cout << neighbor << " ";
-      }
-      std::cout << std::endl;
+      // std::cout << "node " << i << " has (degree - 1) 2-hop neighbors: ";
+      // for (auto &neighbor : two_hop_neighbors) {
+      //   std::cout << neighbor << " ";
+      // }
+      // std::cout << std::endl;
       show_a_min_2hop_example = true;
     }
   }
@@ -87,20 +87,22 @@ void two_hop_analysis(const IdxT *graph, const int degree, const int num_nodes) 
             << ", upper: " << (degree - 1) + (degree - 1) * (degree - 1)
             << ", lower: " << (degree - 1) << std::endl;
 
-  std::cout << "two_hop_count_hist: " << std::endl;
-  for (auto &kv : two_hop_count_hist) {
-    std::cout << kv.first << ": " << kv.second << std::endl;
-  }
+  // std::cout << "two_hop_count_hist: " << std::endl;
+  // for (auto &kv : two_hop_count_hist) {
+  //   std::cout << kv.first << ": " << kv.second << std::endl;
+  // }
 }
 
-int main() {
+int main(int argc, char** argv) {
+  if (argc != 2) {
+    std::cout << "Usage: " << argv[0] << " <index file>" << std::endl;
+    return 1;
+  }
   raft::resources handle;
   cuvs::neighbors::cagra::index<float, uint32_t> index(handle);
   cuvs::neighbors::cagra::deserialize(
       handle,
-      "/usr3/jiangyinzuo_data/cuvs-bench-dataset/sift-128-euclidean/index/"
-      "cuvs_cagra.graph_degree32.intermediate_graph_degree128.graph_build_"
-      "algoNN_DESCENT",
+      argv[1],
       &index);
   std::cout << "graph degree: " << index.graph_degree() << std::endl;
   auto graph_view = index.graph();
