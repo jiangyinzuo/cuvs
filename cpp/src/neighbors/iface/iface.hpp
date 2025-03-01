@@ -17,6 +17,7 @@
 #pragma once
 
 #include <cuvs/neighbors/cagra.hpp>
+#include <cuvs/neighbors/my_anns_v1.hpp>
 #include <cuvs/neighbors/common.hpp>
 #include <cuvs/neighbors/ivf_flat.hpp>
 #include <cuvs/neighbors/ivf_pq.hpp>
@@ -50,6 +51,10 @@ void build(const raft::device_resources& handle,
     auto idx = cuvs::neighbors::cagra::build(
       handle, *static_cast<const cagra::index_params*>(index_params), index_dataset);
     interface.index_.emplace(std::move(idx));
+  } else if constexpr (std::is_same<AnnIndexType, my_anns_v1::index<T, IdxT>>::value) {
+    auto idx = cuvs::neighbors::my_anns_v1::build(
+      handle, *static_cast<const my_anns_v1::index_params*>(index_params), index_dataset);
+    interface.index_.emplace(std::move(idx));
   }
   resource::sync_stream(handle);
 }
@@ -74,6 +79,8 @@ void extend(
     interface.index_.emplace(std::move(idx));
   } else if constexpr (std::is_same<AnnIndexType, cagra::index<T, IdxT>>::value) {
     RAFT_FAIL("CAGRA does not implement the extend method");
+  } else if constexpr (std::is_same<AnnIndexType, my_anns_v1::index<T, IdxT>>::value) {
+    RAFT_FAIL("my_anns_v1 does not implement the extend method");
   }
   resource::sync_stream(handle);
 }
@@ -105,6 +112,13 @@ void search(const raft::device_resources& handle,
   } else if constexpr (std::is_same<AnnIndexType, cagra::index<T, uint32_t>>::value) {
     cuvs::neighbors::cagra::search(handle,
                                    *reinterpret_cast<const cagra::search_params*>(search_params),
+                                   interface.index_.value(),
+                                   queries,
+                                   neighbors,
+                                   distances);
+  } else if constexpr (std::is_same<AnnIndexType, my_anns_v1::index<T, uint32_t>>::value) {
+    cuvs::neighbors::my_anns_v1::search(handle,
+                                   *reinterpret_cast<const my_anns_v1::search_params*>(search_params),
                                    interface.index_.value(),
                                    queries,
                                    neighbors,
@@ -149,6 +163,8 @@ void serialize(const raft::device_resources& handle,
     ivf_pq::serialize(handle, os, interface.index_.value());
   } else if constexpr (std::is_same<AnnIndexType, cagra::index<T, IdxT>>::value) {
     cagra::serialize(handle, os, interface.index_.value(), true);
+  } else if constexpr (std::is_same<AnnIndexType, my_anns_v1::index<T, IdxT>>::value) {
+    my_anns_v1::serialize(handle, os, interface.index_.value(), true);
   }
 }
 
@@ -170,6 +186,10 @@ void deserialize(const raft::device_resources& handle,
   } else if constexpr (std::is_same<AnnIndexType, cagra::index<T, IdxT>>::value) {
     cagra::index<T, IdxT> idx(handle);
     cagra::deserialize(handle, is, &idx);
+    interface.index_.emplace(std::move(idx));
+  } else if constexpr (std::is_same<AnnIndexType, my_anns_v1::index<T, IdxT>>::value) {
+    my_anns_v1::index<T, IdxT> idx(handle);
+    my_anns_v1::deserialize(handle, is, &idx);
     interface.index_.emplace(std::move(idx));
   }
 }
@@ -195,6 +215,10 @@ void deserialize(const raft::device_resources& handle,
   } else if constexpr (std::is_same<AnnIndexType, cagra::index<T, IdxT>>::value) {
     cagra::index<T, IdxT> idx(handle);
     cagra::deserialize(handle, is, &idx);
+    interface.index_.emplace(std::move(idx));
+  } else if constexpr (std::is_same<AnnIndexType, my_anns_v1::index<T, IdxT>>::value) {
+    my_anns_v1::index<T, IdxT> idx(handle);
+    my_anns_v1::deserialize(handle, is, &idx);
     interface.index_.emplace(std::move(idx));
   }
 

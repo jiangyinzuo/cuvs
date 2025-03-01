@@ -24,6 +24,7 @@
 #include <raft/core/device_resources.hpp>
 #include <rmm/mr/device/per_device_resource.hpp>
 
+#include <cuvs/neighbors/my_anns_v1.hpp>
 #include <cuvs/neighbors/cagra.hpp>
 #include <cuvs/neighbors/common.hpp>
 #include <cuvs/neighbors/ivf_flat.hpp>
@@ -271,6 +272,94 @@ auto build(const raft::device_resources& handle,
            const mg::index_params<ivf_pq::index_params>& index_params,
            raft::host_matrix_view<const uint8_t, int64_t, row_major> index_dataset)
   -> index<ivf_pq::index<int64_t>, uint8_t, int64_t>;
+
+/// \ingroup mg_cpp_index_build
+/**
+ * @brief Builds a multi-GPU index
+ *
+ * Usage example:
+ * @code{.cpp}
+ * raft::handle_t handle;
+ * cuvs::neighbors::mg::index_params<my_anns_v1::index_params> index_params;
+ * auto index = cuvs::neighbors::mg::build(handle, index_params, index_dataset);
+ * @endcode
+ *
+ * @param[in] handle
+ * @param[in] index_params configure the index building
+ * @param[in] index_dataset a row-major matrix on host [n_rows, dim]
+ *
+ * @return the constructed CAGRA MG index
+ */
+auto build(const raft::device_resources& handle,
+           const mg::index_params<my_anns_v1::index_params>& index_params,
+           raft::host_matrix_view<const float, int64_t, row_major> index_dataset)
+  -> index<my_anns_v1::index<float, uint32_t>, float, uint32_t>;
+
+/// \ingroup mg_cpp_index_build
+/**
+ * @brief Builds a multi-GPU index
+ *
+ * Usage example:
+ * @code{.cpp}
+ * raft::handle_t handle;
+ * cuvs::neighbors::mg::index_params<my_anns_v1::index_params> index_params;
+ * auto index = cuvs::neighbors::mg::build(handle, index_params, index_dataset);
+ * @endcode
+ *
+ * @param[in] handle
+ * @param[in] index_params configure the index building
+ * @param[in] index_dataset a row-major matrix on host [n_rows, dim]
+ *
+ * @return the constructed CAGRA MG index
+ */
+auto build(const raft::device_resources& handle,
+           const mg::index_params<my_anns_v1::index_params>& index_params,
+           raft::host_matrix_view<const half, int64_t, row_major> index_dataset)
+  -> index<my_anns_v1::index<half, uint32_t>, half, uint32_t>;
+
+/// \ingroup mg_cpp_index_build
+/**
+ * @brief Builds a multi-GPU index
+ *
+ * Usage example:
+ * @code{.cpp}
+ * raft::handle_t handle;
+ * cuvs::neighbors::mg::index_params<my_anns_v1::index_params> index_params;
+ * auto index = cuvs::neighbors::mg::build(handle, index_params, index_dataset);
+ * @endcode
+ *
+ * @param[in] handle
+ * @param[in] index_params configure the index building
+ * @param[in] index_dataset a row-major matrix on host [n_rows, dim]
+ *
+ * @return the constructed CAGRA MG index
+ */
+auto build(const raft::device_resources& handle,
+           const mg::index_params<my_anns_v1::index_params>& index_params,
+           raft::host_matrix_view<const int8_t, int64_t, row_major> index_dataset)
+  -> index<my_anns_v1::index<int8_t, uint32_t>, int8_t, uint32_t>;
+
+/// \ingroup mg_cpp_index_build
+/**
+ * @brief Builds a multi-GPU index
+ *
+ * Usage example:
+ * @code{.cpp}
+ * raft::handle_t handle;
+ * cuvs::neighbors::mg::index_params<my_anns_v1::index_params> index_params;
+ * auto index = cuvs::neighbors::mg::build(handle, index_params, index_dataset);
+ * @endcode
+ *
+ * @param[in] handle
+ * @param[in] index_params configure the index building
+ * @param[in] index_dataset a row-major matrix on host [n_rows, dim]
+ *
+ * @return the constructed CAGRA MG index
+ */
+auto build(const raft::device_resources& handle,
+           const mg::index_params<my_anns_v1::index_params>& index_params,
+           raft::host_matrix_view<const uint8_t, int64_t, row_major> index_dataset)
+  -> index<my_anns_v1::index<uint8_t, uint32_t>, uint8_t, uint32_t>;
 
 /// \ingroup mg_cpp_index_build
 /**
@@ -529,6 +618,102 @@ void extend(const raft::device_resources& handle,
             index<ivf_pq::index<int64_t>, uint8_t, int64_t>& index,
             raft::host_matrix_view<const uint8_t, int64_t, row_major> new_vectors,
             std::optional<raft::host_vector_view<const int64_t, int64_t>> new_indices);
+
+/// \ingroup mg_cpp_index_extend
+/**
+ * @brief Extends a multi-GPU index
+ *
+ * Usage example:
+ * @code{.cpp}
+ * raft::handle_t handle;
+ * cuvs::neighbors::mg::index_params<my_anns_v1::index_params> index_params;
+ * auto index = cuvs::neighbors::mg::build(handle, index_params, index_dataset);
+ * cuvs::neighbors::mg::extend(handle, index, new_vectors, std::nullopt);
+ * @endcode
+ *
+ * @param[in] handle
+ * @param[in] index the pre-built index
+ * @param[in] new_vectors a row-major matrix on host [n_rows, dim]
+ * @param[in] new_indices optional vector on host [n_rows],
+ * `std::nullopt` means default continuous range `[0...n_rows)`
+ *
+ */
+void extend(const raft::device_resources& handle,
+            index<my_anns_v1::index<float, uint32_t>, float, uint32_t>& index,
+            raft::host_matrix_view<const float, int64_t, row_major> new_vectors,
+            std::optional<raft::host_vector_view<const uint32_t, int64_t>> new_indices);
+
+/// \ingroup mg_cpp_index_extend
+/**
+ * @brief Extends a multi-GPU index
+ *
+ * Usage example:
+ * @code{.cpp}
+ * raft::handle_t handle;
+ * cuvs::neighbors::mg::index_params<my_anns_v1::index_params> index_params;
+ * auto index = cuvs::neighbors::mg::build(handle, index_params, index_dataset);
+ * cuvs::neighbors::mg::extend(handle, index, new_vectors, std::nullopt);
+ * @endcode
+ *
+ * @param[in] handle
+ * @param[in] index the pre-built index
+ * @param[in] new_vectors a row-major matrix on host [n_rows, dim]
+ * @param[in] new_indices optional vector on host [n_rows],
+ * `std::nullopt` means default continuous range `[0...n_rows)`
+ *
+ */
+void extend(const raft::device_resources& handle,
+            index<my_anns_v1::index<half, uint32_t>, half, uint32_t>& index,
+            raft::host_matrix_view<const half, int64_t, row_major> new_vectors,
+            std::optional<raft::host_vector_view<const uint32_t, int64_t>> new_indices);
+
+/// \ingroup mg_cpp_index_extend
+/**
+ * @brief Extends a multi-GPU index
+ *
+ * Usage example:
+ * @code{.cpp}
+ * raft::handle_t handle;
+ * cuvs::neighbors::mg::index_params<my_anns_v1::index_params> index_params;
+ * auto index = cuvs::neighbors::mg::build(handle, index_params, index_dataset);
+ * cuvs::neighbors::mg::extend(handle, index, new_vectors, std::nullopt);
+ * @endcode
+ *
+ * @param[in] handle
+ * @param[in] index the pre-built index
+ * @param[in] new_vectors a row-major matrix on host [n_rows, dim]
+ * @param[in] new_indices optional vector on host [n_rows],
+ * `std::nullopt` means default continuous range `[0...n_rows)`
+ *
+ */
+void extend(const raft::device_resources& handle,
+            index<my_anns_v1::index<int8_t, uint32_t>, int8_t, uint32_t>& index,
+            raft::host_matrix_view<const int8_t, int64_t, row_major> new_vectors,
+            std::optional<raft::host_vector_view<const uint32_t, int64_t>> new_indices);
+
+/// \ingroup mg_cpp_index_extend
+/**
+ * @brief Extends a multi-GPU index
+ *
+ * Usage example:
+ * @code{.cpp}
+ * raft::handle_t handle;
+ * cuvs::neighbors::mg::index_params<my_anns_v1::index_params> index_params;
+ * auto index = cuvs::neighbors::mg::build(handle, index_params, index_dataset);
+ * cuvs::neighbors::mg::extend(handle, index, new_vectors, std::nullopt);
+ * @endcode
+ *
+ * @param[in] handle
+ * @param[in] index the pre-built index
+ * @param[in] new_vectors a row-major matrix on host [n_rows, dim]
+ * @param[in] new_indices optional vector on host [n_rows],
+ * `std::nullopt` means default continuous range `[0...n_rows)`
+ *
+ */
+void extend(const raft::device_resources& handle,
+            index<my_anns_v1::index<uint8_t, uint32_t>, uint8_t, uint32_t>& index,
+            raft::host_matrix_view<const uint8_t, int64_t, row_major> new_vectors,
+            std::optional<raft::host_vector_view<const uint32_t, int64_t>> new_indices);
 
 /// \ingroup mg_cpp_index_extend
 /**
@@ -945,6 +1130,130 @@ void search(const raft::device_resources& handle,
  * Usage example:
  * @code{.cpp}
  * raft::handle_t handle;
+ * cuvs::neighbors::mg::index_params<my_anns_v1::index_params> index_params;
+ * auto index = cuvs::neighbors::mg::build(handle, index_params, index_dataset);
+ * cuvs::neighbors::mg::search_params<my_anns_v1::search_params> search_params;
+ * cuvs::neighbors::mg::search(handle, index, search_params, queries, neighbors,
+ * distances);
+ * @endcode
+ *
+ * @param[in] handle
+ * @param[in] index the pre-built index
+ * @param[in] search_params configure the index search
+ * @param[in] queries a row-major matrix on host [n_rows, dim]
+ * @param[out] neighbors a row-major matrix on host [n_rows, n_neighbors]
+ * @param[out] distances a row-major matrix on host [n_rows, n_neighbors]
+ * @param[in] n_rows_per_batch (optional) search batch size
+ *
+ */
+void search(const raft::device_resources& handle,
+            const index<my_anns_v1::index<uint8_t, uint32_t>, uint8_t, uint32_t>& index,
+            const mg::search_params<my_anns_v1::search_params>& search_params,
+            raft::host_matrix_view<const uint8_t, int64_t, row_major> queries,
+            raft::host_matrix_view<uint32_t, int64_t, row_major> neighbors,
+            raft::host_matrix_view<float, int64_t, row_major> distances,
+            int64_t n_rows_per_batch = DEFAULT_SEARCH_BATCH_SIZE);
+
+/// \ingroup mg_cpp_index_search
+/**
+ * @brief Searches a multi-GPU index
+ *
+ * Usage example:
+ * @code{.cpp}
+ * raft::handle_t handle;
+ * cuvs::neighbors::mg::index_params<my_anns_v1::index_params> index_params;
+ * auto index = cuvs::neighbors::mg::build(handle, index_params, index_dataset);
+ * cuvs::neighbors::mg::search_params<my_anns_v1::search_params> search_params;
+ * cuvs::neighbors::mg::search(handle, index, search_params, queries, neighbors,
+ * distances);
+ * @endcode
+ *
+ * @param[in] handle
+ * @param[in] index the pre-built index
+ * @param[in] search_params configure the index search
+ * @param[in] queries a row-major matrix on host [n_rows, dim]
+ * @param[out] neighbors a row-major matrix on host [n_rows, n_neighbors]
+ * @param[out] distances a row-major matrix on host [n_rows, n_neighbors]
+ * @param[in] n_rows_per_batch (optional) search batch size
+ *
+ */
+void search(const raft::device_resources& handle,
+            const index<my_anns_v1::index<float, uint32_t>, float, uint32_t>& index,
+            const mg::search_params<my_anns_v1::search_params>& search_params,
+            raft::host_matrix_view<const float, int64_t, row_major> queries,
+            raft::host_matrix_view<uint32_t, int64_t, row_major> neighbors,
+            raft::host_matrix_view<float, int64_t, row_major> distances,
+            int64_t n_rows_per_batch = DEFAULT_SEARCH_BATCH_SIZE);
+
+/// \ingroup mg_cpp_index_search
+/**
+ * @brief Searches a multi-GPU index
+ *
+ * Usage example:
+ * @code{.cpp}
+ * raft::handle_t handle;
+ * cuvs::neighbors::mg::index_params<my_anns_v1::index_params> index_params;
+ * auto index = cuvs::neighbors::mg::build(handle, index_params, index_dataset);
+ * cuvs::neighbors::mg::search_params<my_anns_v1::search_params> search_params;
+ * cuvs::neighbors::mg::search(handle, index, search_params, queries, neighbors,
+ * distances);
+ * @endcode
+ *
+ * @param[in] handle
+ * @param[in] index the pre-built index
+ * @param[in] search_params configure the index search
+ * @param[in] queries a row-major matrix on host [n_rows, dim]
+ * @param[out] neighbors a row-major matrix on host [n_rows, n_neighbors]
+ * @param[out] distances a row-major matrix on host [n_rows, n_neighbors]
+ * @param[in] n_rows_per_batch (optional) search batch size
+ *
+ */
+void search(const raft::device_resources& handle,
+            const index<my_anns_v1::index<half, uint32_t>, half, uint32_t>& index,
+            const mg::search_params<my_anns_v1::search_params>& search_params,
+            raft::host_matrix_view<const half, int64_t, row_major> queries,
+            raft::host_matrix_view<uint32_t, int64_t, row_major> neighbors,
+            raft::host_matrix_view<float, int64_t, row_major> distances,
+            int64_t n_rows_per_batch = DEFAULT_SEARCH_BATCH_SIZE);
+
+/// \ingroup mg_cpp_index_search
+/**
+ * @brief Searches a multi-GPU index
+ *
+ * Usage example:
+ * @code{.cpp}
+ * raft::handle_t handle;
+ * cuvs::neighbors::mg::index_params<my_anns_v1::index_params> index_params;
+ * auto index = cuvs::neighbors::mg::build(handle, index_params, index_dataset);
+ * cuvs::neighbors::mg::search_params<my_anns_v1::search_params> search_params;
+ * cuvs::neighbors::mg::search(handle, index, search_params, queries, neighbors,
+ * distances);
+ * @endcode
+ *
+ * @param[in] handle
+ * @param[in] index the pre-built index
+ * @param[in] search_params configure the index search
+ * @param[in] queries a row-major matrix on host [n_rows, dim]
+ * @param[out] neighbors a row-major matrix on host [n_rows, n_neighbors]
+ * @param[out] distances a row-major matrix on host [n_rows, n_neighbors]
+ * @param[in] n_rows_per_batch (optional) search batch size
+ *
+ */
+void search(const raft::device_resources& handle,
+            const index<my_anns_v1::index<int8_t, uint32_t>, int8_t, uint32_t>& index,
+            const mg::search_params<my_anns_v1::search_params>& search_params,
+            raft::host_matrix_view<const int8_t, int64_t, row_major> queries,
+            raft::host_matrix_view<uint32_t, int64_t, row_major> neighbors,
+            raft::host_matrix_view<float, int64_t, row_major> distances,
+            int64_t n_rows_per_batch = DEFAULT_SEARCH_BATCH_SIZE);
+
+/// \ingroup mg_cpp_index_search
+/**
+ * @brief Searches a multi-GPU index
+ *
+ * Usage example:
+ * @code{.cpp}
+ * raft::handle_t handle;
  * cuvs::neighbors::mg::index_params<cagra::index_params> index_params;
  * auto index = cuvs::neighbors::mg::build(handle, index_params, index_dataset);
  * cuvs::neighbors::mg::search_params<cagra::search_params> search_params;
@@ -1283,6 +1592,29 @@ template <typename T, typename IdxT>
 auto deserialize_cagra(const raft::device_resources& handle, const std::string& filename)
   -> index<cagra::index<T, IdxT>, T, IdxT>;
 
+/// \ingroup mg_cpp_deserialize
+/**
+ * @brief Deserializes a CAGRA multi-GPU index
+ *
+ * Usage example:
+ * @code{.cpp}
+ * raft::handle_t handle;
+ * cuvs::neighbors::mg::index_params<my_anns_v1::index_params> index_params;
+ * auto index = cuvs::neighbors::mg::build(handle, index_params, index_dataset);
+ * const std::string filename = "mg_index.cuvs";
+ * cuvs::neighbors::mg::serialize(handle, index, filename);
+ * auto new_index = cuvs::neighbors::mg::deserialize_my_anns_v1<float, uint32_t>(handle, filename);
+ *
+ * @endcode
+ *
+ * @param[in] handle
+ * @param[in] filename path to the file to be deserialized
+ *
+ */
+template <typename T, typename IdxT>
+auto deserialize_my_anns_v1(const raft::device_resources& handle, const std::string& filename)
+  -> index<my_anns_v1::index<T, IdxT>, T, IdxT>;
+
 /// \defgroup mg_cpp_distribute ANN MG local index distribution
 
 /// \ingroup mg_cpp_distribute
@@ -1355,6 +1687,30 @@ auto distribute_pq(const raft::device_resources& handle, const std::string& file
 template <typename T, typename IdxT>
 auto distribute_cagra(const raft::device_resources& handle, const std::string& filename)
   -> index<cagra::index<T, IdxT>, T, IdxT>;
+
+/// \ingroup mg_cpp_distribute
+/**
+ * @brief Replicates a locally built and serialized CAGRA index to all GPUs to form a distributed
+ * multi-GPU index
+ *
+ * Usage example:
+ * @code{.cpp}
+ * raft::handle_t handle;
+ * cuvs::neighbors::my_anns_v1::index_params index_params;
+ * auto index = cuvs::neighbors::my_anns_v1::build(handle, index_params, index_dataset);
+ * const std::string filename = "local_index.cuvs";
+ * cuvs::neighbors::my_anns_v1::serialize(handle, filename, index);
+ * auto new_index = cuvs::neighbors::mg::distribute_my_anns_v1<float, uint32_t>(handle, filename);
+ *
+ * @endcode
+ *
+ * @param[in] handle
+ * @param[in] filename path to the file to be deserialized : a local index
+ *
+ */
+template <typename T, typename IdxT>
+auto distribute_my_anns_v1(const raft::device_resources& handle, const std::string& filename)
+  -> index<my_anns_v1::index<T, IdxT>, T, IdxT>;
 
 }  // namespace cuvs::neighbors::mg
 

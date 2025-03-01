@@ -226,6 +226,59 @@ cagra_macro = """
   }
 """
 
+my_anns_v1_macro = """
+#define CUVS_INST_MG_MY_ANNS_V1(T, IdxT)                                                                                       \\
+  index<my_anns_v1::index<T, IdxT>, T, IdxT> build(const raft::device_resources& handle,                                       \\
+                                              const mg::index_params<my_anns_v1::index_params>& index_params,                  \\
+                                              raft::host_matrix_view<const T, int64_t, row_major> index_dataset)          \\
+  {                                                                                                                       \\
+    const raft::comms::nccl_clique& clique = raft::resource::get_nccl_clique(handle);                                     \\
+    index<my_anns_v1::index<T, IdxT>, T, IdxT> index(index_params.mode, clique.num_ranks_);                                    \\
+    cuvs::neighbors::mg::detail::build(handle, index,                                                                     \\
+                                       static_cast<const cuvs::neighbors::index_params*>(&index_params),                  \\
+                                       index_dataset);                                                                    \\
+    return index;                                                                                                         \\
+  }                                                                                                                       \\
+                                                                                                                          \\
+  void search(const raft::device_resources& handle,                                                                       \\
+              const index<my_anns_v1::index<T, IdxT>, T, IdxT>& index,                                                         \\
+              const mg::search_params<my_anns_v1::search_params>& search_params,                                               \\
+              raft::host_matrix_view<const T, int64_t, row_major> queries,                                                \\
+              raft::host_matrix_view<IdxT, int64_t, row_major> neighbors,                                                 \\
+              raft::host_matrix_view<float, int64_t, row_major> distances,                                                \\
+              int64_t n_rows_per_batch)                                                                                   \\
+  {                                                                                                                       \\
+    cuvs::neighbors::mg::detail::search(handle, index,                                                                    \\
+                                        static_cast<const cuvs::neighbors::search_params*>(&search_params),               \\
+                                        queries, neighbors, distances, n_rows_per_batch);                                 \\
+  }                                                                                                                       \\
+                                                                                                                          \\
+  void serialize(const raft::device_resources& handle,                                                                    \\
+                 const index<my_anns_v1::index<T, IdxT>, T, IdxT>& index,                                                      \\
+                 const std::string& filename)                                                                             \\
+  {                                                                                                                       \\
+    cuvs::neighbors::mg::detail::serialize(handle, index, filename);                                                      \\
+  }                                                                                                                       \\
+                                                                                                                          \\
+  template<>                                                                                                              \\
+  index<my_anns_v1::index<T, IdxT>, T, IdxT> deserialize_my_anns_v1<T, IdxT>(const raft::device_resources& handle,                  \\
+                                                                   const std::string& filename)                           \\
+  {                                                                                                                       \\
+    auto idx = index<my_anns_v1::index<T, IdxT>, T, IdxT>(handle, filename);                                                   \\
+    return idx;                                                                                                           \\
+  }                                                                                                                       \\
+                                                                                                                          \\
+  template<>                                                                                                              \\
+  index<my_anns_v1::index<T, IdxT>, T, IdxT> distribute_my_anns_v1<T, IdxT>(const raft::device_resources& handle,                   \\
+                                                                  const std::string& filename)                            \\
+  {                                                                                                                       \\
+    const raft::comms::nccl_clique& clique = raft::resource::get_nccl_clique(handle);                                     \\
+    auto idx = index<my_anns_v1::index<T, IdxT>, T, IdxT>(REPLICATED, clique.num_ranks_);                                      \\
+    cuvs::neighbors::mg::detail::deserialize_and_distribute(handle, idx, filename);                                       \\
+    return idx;                                                                                                           \\
+  }
+"""
+
 flat_macros = dict (
     flat = dict(
         include=include_macro,
@@ -249,6 +302,13 @@ cagra_macros = dict (
         name="CUVS_INST_MG_CAGRA",
     )
 )
+my_anns_v1_macros = dict (
+    my_anns_v1 = dict(
+        include=include_macro,
+        definition=my_anns_v1_macro,
+        name="CUVS_INST_MG_MY_ANNS_V1",
+    )
+)
 
 flat_types = dict(
     float_int64_t=("float", "int64_t"),
@@ -270,7 +330,14 @@ cagra_types = dict(
     uint8_t_uint32_t=("uint8_t", "uint32_t"),
 )
 
-for macros, types in [(flat_macros, flat_types), (pq_macros, pq_types), (cagra_macros, cagra_types)]:
+my_anns_v1_types = dict(
+    float_uint32_t=("float", "uint32_t"),
+    half_uint32_t=("half", "uint32_t"),
+    int8_t_uint32_t=("int8_t", "uint32_t"),
+    uint8_t_uint32_t=("uint8_t", "uint32_t"),
+)
+
+for macros, types in [(flat_macros, flat_types), (pq_macros, pq_types), (my_anns_v1_macros, my_anns_v1_types)]:
   for type_path, (T, IdxT) in types.items():
       for macro_path, macro in macros.items():
           path = f"mg_{macro_path}_{type_path}.cu"

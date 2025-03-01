@@ -18,6 +18,7 @@
 
 #include <cuvs/neighbors/brute_force.hpp>
 #include <cuvs/neighbors/cagra.hpp>
+#include <cuvs/neighbors/my_anns_v1.hpp>
 #include <cuvs/neighbors/ivf_flat.hpp>
 #include <cuvs/neighbors/ivf_pq.hpp>
 
@@ -62,6 +63,14 @@ CUVS_INST_DYNAMIC_BATCHING_INDEX(int8_t, uint32_t, cuvs::neighbors::cagra, index
 CUVS_INST_DYNAMIC_BATCHING_INDEX(uint8_t,
                                  uint32_t,
                                  cuvs::neighbors::cagra,
+                                 index<uint8_t, uint32_t>);
+
+CUVS_INST_DYNAMIC_BATCHING_INDEX(float, uint32_t, cuvs::neighbors::my_anns_v1, index<float, uint32_t>);
+CUVS_INST_DYNAMIC_BATCHING_INDEX(half, uint32_t, cuvs::neighbors::my_anns_v1, index<half, uint32_t>);
+CUVS_INST_DYNAMIC_BATCHING_INDEX(int8_t, uint32_t, cuvs::neighbors::my_anns_v1, index<int8_t, uint32_t>);
+CUVS_INST_DYNAMIC_BATCHING_INDEX(uint8_t,
+                                 uint32_t,
+                                 cuvs::neighbors::my_anns_v1,
                                  index<uint8_t, uint32_t>);
 
 CUVS_INST_DYNAMIC_BATCHING_INDEX(float, int64_t, cuvs::neighbors::ivf_pq, index<int64_t>);

@@ -533,6 +533,10 @@ void search(const raft::device_resources& handle,
       const cuvs::neighbors::mg::search_params<cagra::search_params>* mg_search_params =
         static_cast<const cuvs::neighbors::mg::search_params<cagra::search_params>*>(search_params);
       search_mode = mg_search_params->search_mode;
+    } else if constexpr (std::is_same<AnnIndexType, my_anns_v1::index<T, IdxT>>::value) {
+      const cuvs::neighbors::mg::search_params<my_anns_v1::search_params>* mg_search_params =
+        static_cast<const cuvs::neighbors::mg::search_params<my_anns_v1::search_params>*>(search_params);
+      search_mode = mg_search_params->search_mode;
     }
 
     if (search_mode == LOAD_BALANCER) {
@@ -604,6 +608,10 @@ void search(const raft::device_resources& handle,
     } else if constexpr (std::is_same<AnnIndexType, cagra::index<T, IdxT>>::value) {
       const cuvs::neighbors::mg::search_params<cagra::search_params>* mg_search_params =
         static_cast<const cuvs::neighbors::mg::search_params<cagra::search_params>*>(search_params);
+      merge_mode = mg_search_params->merge_mode;
+    } else if constexpr (std::is_same<AnnIndexType, my_anns_v1::index<T, IdxT>>::value) {
+      const cuvs::neighbors::mg::search_params<my_anns_v1::search_params>* mg_search_params =
+        static_cast<const cuvs::neighbors::mg::search_params<my_anns_v1::search_params>*>(search_params);
       merge_mode = mg_search_params->merge_mode;
     }
 

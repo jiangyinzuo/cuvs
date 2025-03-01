@@ -306,6 +306,105 @@ if(BUILD_SHARED_LIBS)
                               # "-O0;-g;-G"
   )
 
+  add_library(
+    cuvs-my-anns-v1-search STATIC
+    src/neighbors/my_anns_v1_search_float.cu
+    src/neighbors/my_anns_v1_search_half.cu
+    src/neighbors/my_anns_v1_search_int8.cu
+    src/neighbors/my_anns_v1_search_uint8.cu
+    src/neighbors/detail/my_anns_v1/compute_distance.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_standard_BitwiseHamming_u8_uint32_dim128_t8.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_standard_BitwiseHamming_u8_uint32_dim256_t16.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_standard_BitwiseHamming_u8_uint32_dim512_t32.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_standard_InnerProduct_float_uint32_dim128_t8.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_standard_InnerProduct_float_uint32_dim256_t16.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_standard_InnerProduct_float_uint32_dim512_t32.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_standard_InnerProduct_half_uint32_dim128_t8.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_standard_InnerProduct_half_uint32_dim256_t16.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_standard_InnerProduct_half_uint32_dim512_t32.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_standard_InnerProduct_int8_uint32_dim128_t8.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_standard_InnerProduct_int8_uint32_dim256_t16.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_standard_InnerProduct_int8_uint32_dim512_t32.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_standard_InnerProduct_uint8_uint32_dim128_t8.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_standard_InnerProduct_uint8_uint32_dim256_t16.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_standard_InnerProduct_uint8_uint32_dim512_t32.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_standard_L2Expanded_float_uint32_dim128_t8.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_standard_L2Expanded_float_uint32_dim256_t16.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_standard_L2Expanded_float_uint32_dim512_t32.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_standard_L2Expanded_half_uint32_dim128_t8.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_standard_L2Expanded_half_uint32_dim256_t16.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_standard_L2Expanded_half_uint32_dim512_t32.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_standard_L2Expanded_int8_uint32_dim128_t8.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_standard_L2Expanded_int8_uint32_dim256_t16.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_standard_L2Expanded_int8_uint32_dim512_t32.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_standard_L2Expanded_uint8_uint32_dim128_t8.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_standard_L2Expanded_uint8_uint32_dim256_t16.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_standard_L2Expanded_uint8_uint32_dim512_t32.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_vpq_L2Expanded_float_uint32_dim128_t8_8pq_2subd_half.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_vpq_L2Expanded_float_uint32_dim128_t8_8pq_4subd_half.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_vpq_L2Expanded_float_uint32_dim256_t16_8pq_2subd_half.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_vpq_L2Expanded_float_uint32_dim256_t16_8pq_4subd_half.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_vpq_L2Expanded_float_uint32_dim512_t32_8pq_2subd_half.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_vpq_L2Expanded_float_uint32_dim512_t32_8pq_4subd_half.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_vpq_L2Expanded_half_uint32_dim128_t8_8pq_2subd_half.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_vpq_L2Expanded_half_uint32_dim128_t8_8pq_4subd_half.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_vpq_L2Expanded_half_uint32_dim256_t16_8pq_2subd_half.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_vpq_L2Expanded_half_uint32_dim256_t16_8pq_4subd_half.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_vpq_L2Expanded_half_uint32_dim512_t32_8pq_2subd_half.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_vpq_L2Expanded_half_uint32_dim512_t32_8pq_4subd_half.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_vpq_L2Expanded_int8_uint32_dim128_t8_8pq_2subd_half.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_vpq_L2Expanded_int8_uint32_dim128_t8_8pq_4subd_half.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_vpq_L2Expanded_int8_uint32_dim256_t16_8pq_2subd_half.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_vpq_L2Expanded_int8_uint32_dim256_t16_8pq_4subd_half.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_vpq_L2Expanded_int8_uint32_dim512_t32_8pq_2subd_half.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_vpq_L2Expanded_int8_uint32_dim512_t32_8pq_4subd_half.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_vpq_L2Expanded_uint8_uint32_dim128_t8_8pq_2subd_half.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_vpq_L2Expanded_uint8_uint32_dim128_t8_8pq_4subd_half.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_vpq_L2Expanded_uint8_uint32_dim256_t16_8pq_2subd_half.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_vpq_L2Expanded_uint8_uint32_dim256_t16_8pq_4subd_half.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_vpq_L2Expanded_uint8_uint32_dim512_t32_8pq_2subd_half.cu
+    src/neighbors/detail/my_anns_v1/compute_distance_vpq_L2Expanded_uint8_uint32_dim512_t32_8pq_4subd_half.cu
+    src/neighbors/detail/my_anns_v1/search_multi_cta_float_uint32.cu
+    src/neighbors/detail/my_anns_v1/search_multi_cta_half_uint32.cu
+    src/neighbors/detail/my_anns_v1/search_multi_cta_int8_uint32.cu
+    src/neighbors/detail/my_anns_v1/search_multi_cta_uint8_uint32.cu
+    src/neighbors/detail/my_anns_v1/search_single_cta_float_uint32.cu
+    src/neighbors/detail/my_anns_v1/search_single_cta_half_uint32.cu
+    src/neighbors/detail/my_anns_v1/search_single_cta_int8_uint32.cu
+    src/neighbors/detail/my_anns_v1/search_single_cta_uint8_uint32.cu
+  )
+
+  file(GLOB_RECURSE compute_distance_sources "src/neighbors/detail/my_anns_v1/compute_distance_*.cu")
+  set_source_files_properties(${compute_distance_sources} PROPERTIES COMPILE_FLAGS -maxrregcount=64)
+  # maxrregcount=64 compile error in debug mode
+  # set_source_files_properties(${compute_distance_sources}
+  #       src/neighbors/my_anns_v1_search_float.cu
+  #       src/neighbors/my_anns_v1_search_half.cu
+  #       src/neighbors/my_anns_v1_search_int8.cu
+  #       src/neighbors/my_anns_v1_search_uint8.cu
+  #     PROPERTIES COMPILE_OPTIONS "-O0;-g;-G;-maxrregcount=255")
+
+  set_target_properties(
+    cuvs-my-anns-v1-search
+    PROPERTIES BUILD_RPATH "\$ORIGIN"
+               CXX_STANDARD 17
+               CXX_STANDARD_REQUIRED ON
+               CUDA_STANDARD 17
+               CUDA_STANDARD_REQUIRED ON
+               CUDA_SEPARABLE_COMPILATION ON
+               INTERFACE_POSITION_INDEPENDENT_CODE ON
+               POSITION_INDEPENDENT_CODE ON
+  )
+  target_link_libraries(cuvs-my-anns-v1-search PRIVATE raft::raft)
+  target_include_directories(
+    cuvs-my-anns-v1-search PRIVATE "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+  )
+  target_compile_options(
+    cuvs-my-anns-v1-search PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:${CUVS_CXX_FLAGS}>"
+                              "$<$<COMPILE_LANGUAGE:CUDA>:${CUVS_CUDA_FLAGS}>"
+                              # "-O0;-g;-G"
+  )
+
   if(BUILD_MG_ALGOS)
     set(CUVS_MG_ALGOS
         src/neighbors/mg/mg_flat_float_int64_t.cu
@@ -319,6 +418,10 @@ if(BUILD_SHARED_LIBS)
         src/neighbors/mg/mg_cagra_half_uint32_t.cu
         src/neighbors/mg/mg_cagra_int8_t_uint32_t.cu
         src/neighbors/mg/mg_cagra_uint8_t_uint32_t.cu
+        src/neighbors/mg/mg_my_anns_v1_float_uint32_t.cu
+        src/neighbors/mg/mg_my_anns_v1_half_uint32_t.cu
+        src/neighbors/mg/mg_my_anns_v1_int8_t_uint32_t.cu
+        src/neighbors/mg/mg_my_anns_v1_uint8_t_uint32_t.cu
         src/neighbors/mg/omp_checks.cpp
         src/neighbors/mg/nccl_comm.cpp
     )
@@ -414,12 +517,32 @@ if(BUILD_SHARED_LIBS)
     src/neighbors/cagra_merge_half.cu
     src/neighbors/cagra_merge_int8.cu
     src/neighbors/cagra_merge_uint8.cu
+    src/neighbors/my_anns_v1_build_float.cu
+    src/neighbors/my_anns_v1_build_half.cu
+    src/neighbors/my_anns_v1_build_int8.cu
+    src/neighbors/my_anns_v1_build_uint8.cu
+    src/neighbors/my_anns_v1_extend_float.cu
+    src/neighbors/my_anns_v1_extend_int8.cu
+    src/neighbors/my_anns_v1_extend_uint8.cu
+    src/neighbors/my_anns_v1_optimize.cu
+    src/neighbors/my_anns_v1_serialize_float.cu
+    src/neighbors/my_anns_v1_serialize_half.cu
+    src/neighbors/my_anns_v1_serialize_int8.cu
+    src/neighbors/my_anns_v1_serialize_uint8.cu
+    src/neighbors/my_anns_v1_merge_float.cu
+    src/neighbors/my_anns_v1_merge_half.cu
+    src/neighbors/my_anns_v1_merge_int8.cu
+    src/neighbors/my_anns_v1_merge_uint8.cu
     src/neighbors/cuhnsw_v2/cuhnsw_base.cu
     src/neighbors/cuhnsw_v2/cuhnsw_build.cu
     src/neighbors/iface/iface_cagra_float_uint32_t.cu
     src/neighbors/iface/iface_cagra_half_uint32_t.cu
     src/neighbors/iface/iface_cagra_int8_t_uint32_t.cu
     src/neighbors/iface/iface_cagra_uint8_t_uint32_t.cu
+    src/neighbors/iface/iface_my_anns_v1_float_uint32_t.cu
+    src/neighbors/iface/iface_my_anns_v1_half_uint32_t.cu
+    src/neighbors/iface/iface_my_anns_v1_int8_t_uint32_t.cu
+    src/neighbors/iface/iface_my_anns_v1_uint8_t_uint32_t.cu
     src/neighbors/iface/iface_flat_float_int64_t.cu
     src/neighbors/iface/iface_flat_int8_t_int64_t.cu
     src/neighbors/iface/iface_flat_uint8_t_int64_t.cu
@@ -429,6 +552,8 @@ if(BUILD_SHARED_LIBS)
     src/neighbors/iface/iface_pq_uint8_t_int64_t.cu
     src/neighbors/detail/cagra/cagra_build.cpp
     src/neighbors/detail/cagra/topk_for_cagra/topk.cu
+    src/neighbors/detail/my_anns_v1/my_anns_v1_build.cpp
+    src/neighbors/detail/my_anns_v1/topk_for_my_anns_v1/topk.cu
     src/neighbors/dynamic_batching.cu
     $<$<BOOL:${BUILD_CAGRA_HNSWLIB}>:src/neighbors/hnsw.cpp>
     src/neighbors/ivf_flat_index.cpp
@@ -607,7 +732,7 @@ if(BUILD_SHARED_LIBS)
       cuvs
       PUBLIC rmm::rmm raft::raft ${CUVS_CTK_MATH_DEPENDENCIES}
       PRIVATE nvidia::cutlass::cutlass $<TARGET_NAME_IF_EXISTS:OpenMP::OpenMP_CXX>
-              cuvs-cagra-search ${CUVS_COMMS_DEPENDENCY}
+              cuvs-cagra-search cuvs-my-anns-v1-search ${CUVS_COMMS_DEPENDENCY}
     )
 
     if(NOT CUVS_COMPILE_DYNAMIC_ONLY)
@@ -661,6 +786,8 @@ SECTIONS
 
     target_link_libraries(cuvs-cagra-search PUBLIC CUDA::nvtx3)
     target_compile_definitions(cuvs-cagra-search PUBLIC NVTX_ENABLED)
+    target_link_libraries(cuvs-my-anns-v1-search PUBLIC CUDA::nvtx3)
+    target_compile_definitions(cuvs-my-anns-v1-search PUBLIC NVTX_ENABLED)
   else()
     # Allow enable NVTX downstream if not set here. This creates a new option at build/install time,
     # which is set by default to OFF, but can be enabled in the dependent project.
@@ -713,6 +840,7 @@ target_compile_definitions(cuvs::cuvs INTERFACE $<$<BOOL:${CUVS_NVTX}>:NVTX_ENAB
       src/neighbors/ivf_flat_c.cpp
       src/neighbors/ivf_pq_c.cpp
       src/neighbors/cagra_c.cpp
+      src/neighbors/my_anns_v1_c.cpp
       $<$<BOOL:${BUILD_CAGRA_HNSWLIB}>:src/neighbors/hnsw_c.cpp>
       src/neighbors/nn_descent_c.cpp
       src/neighbors/refine/refine_c.cpp

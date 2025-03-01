@@ -213,6 +213,60 @@ cagra_macro = """
                    const std::string& filename);
 """
 
+my_anns_v1_macro = """
+#define CUVS_INST_MG_MY_ANNS_V1(T, IdxT)                                                                                             \\
+  using T_ha = raft::host_device_accessor<std::experimental::default_accessor<const T>, raft::memory_type::device>;             \\
+  using T_da= raft::host_device_accessor<std::experimental::default_accessor<const T>, raft::memory_type::host>;                \\
+  using IdxT_ha = raft::host_device_accessor<std::experimental::default_accessor<const IdxT>, raft::memory_type::device>;       \\
+  using IdxT_da = raft::host_device_accessor<std::experimental::default_accessor<const IdxT>, raft::memory_type::host>;         \\
+                                                                                                                                \\
+  template void build(const raft::device_resources& handle,                                                                     \\
+             cuvs::neighbors::iface<my_anns_v1::index<T, IdxT>, T, IdxT>& interface,                                                 \\
+             const cuvs::neighbors::index_params* index_params,                                                                 \\
+             raft::mdspan<const T, matrix_extent<int64_t>, row_major, T_ha> index_dataset);                                     \\
+                                                                                                                                \\
+  template void build(const raft::device_resources& handle,                                                                     \\
+             cuvs::neighbors::iface<my_anns_v1::index<T, IdxT>, T, IdxT>& interface,                                                 \\
+             const cuvs::neighbors::index_params* index_params,                                                                 \\
+             raft::mdspan<const T, matrix_extent<int64_t>, row_major, T_da> index_dataset);                                     \\
+                                                                                                                                \\
+  template void extend(const raft::device_resources& handle,                                                                    \\
+              cuvs::neighbors::iface<my_anns_v1::index<T, IdxT>, T, IdxT>& interface,                                                \\
+              raft::mdspan<const T, matrix_extent<int64_t>, row_major, T_ha> new_vectors,                                       \\
+              std::optional<raft::mdspan<const IdxT, vector_extent<int64_t>, layout_c_contiguous, IdxT_ha>> new_indices);       \\
+                                                                                                                                \\
+  template void extend(const raft::device_resources& handle,                                                                    \\
+              cuvs::neighbors::iface<my_anns_v1::index<T, IdxT>, T, IdxT>& interface,                                                \\
+              raft::mdspan<const T, matrix_extent<int64_t>, row_major, T_da> new_vectors,                                       \\
+              std::optional<raft::mdspan<const IdxT, vector_extent<int64_t>, layout_c_contiguous, IdxT_da>> new_indices);       \\
+                                                                                                                                \\
+  template void search(const raft::device_resources& handle,                                                                    \\
+              const cuvs::neighbors::iface<my_anns_v1::index<T, IdxT>, T, IdxT>& interface,                                          \\
+              const cuvs::neighbors::search_params* search_params,                                                              \\
+              raft::device_matrix_view<const T, int64_t, row_major> queries,                                                    \\
+              raft::device_matrix_view<IdxT, int64_t, row_major> neighbors,                                                     \\
+              raft::device_matrix_view<float, int64_t, row_major> distances);                                                   \\
+                                                                                                                                \\
+    template void search(const raft::device_resources& handle,                                                                  \\
+              const cuvs::neighbors::iface<my_anns_v1::index<T, IdxT>, T, IdxT>& interface,                                          \\
+              const cuvs::neighbors::search_params* search_params,                                                              \\
+              raft::host_matrix_view<const T, int64_t, row_major> h_queries,                                                    \\
+              raft::device_matrix_view<IdxT, int64_t, row_major> d_neighbors,                                                   \\
+              raft::device_matrix_view<float, int64_t, row_major> d_distances);                                                 \\
+                                                                                                                                \\
+  template void serialize(const raft::device_resources& handle,                                                                 \\
+                 const cuvs::neighbors::iface<my_anns_v1::index<T, IdxT>, T, IdxT>& interface,                                       \\
+                 std::ostream& os);                                                                                             \\
+                                                                                                                                \\
+  template void deserialize(const raft::device_resources& handle,                                                               \\
+                   cuvs::neighbors::iface<my_anns_v1::index<T, IdxT>, T, IdxT>& interface,                                           \\
+                   std::istream& is);                                                                                           \\
+                                                                                                                                \\
+  template void deserialize(const raft::device_resources& handle,                                                               \\
+                   cuvs::neighbors::iface<my_anns_v1::index<T, IdxT>, T, IdxT>& interface,                                           \\
+                   const std::string& filename);
+"""
+
 flat_macros = dict (
     flat = dict(
         include=include_macro,
@@ -237,6 +291,14 @@ cagra_macros = dict (
     )
 )
 
+my_anns_v1_macros = dict (
+        my_anns_v1 = dict(
+            include=include_macro,
+            definition = my_anns_v1_macro,
+            name="CUVS_INST_MG_MY_ANNS_V1",
+            )
+        )
+
 flat_types = dict(
     float_int64_t=("float", "int64_t"),
     int8_t_int64_t=("int8_t", "int64_t"),
@@ -257,7 +319,14 @@ cagra_types = dict(
     uint8_t_uint32_t=("uint8_t", "uint32_t"),
 )
 
-for macros, types in [(flat_macros, flat_types), (pq_macros, pq_types), (cagra_macros, cagra_types)]:
+my_anns_v1_types = dict(
+    float_uint32_t=("float", "uint32_t"),
+    half_uint32_t=("half", "uint32_t"),
+    int8_t_uint32_t=("int8_t", "uint32_t"),
+    uint8_t_uint32_t=("uint8_t", "uint32_t"),
+)
+
+for macros, types in [(flat_macros, flat_types), (pq_macros, pq_types), (cagra_macros, cagra_types), (my_anns_v1_macros, my_anns_v1_types)]:
   for type_path, (T, IdxT) in types.items():
       for macro_path, macro in macros.items():
           path = f"iface_{macro_path}_{type_path}.cu"

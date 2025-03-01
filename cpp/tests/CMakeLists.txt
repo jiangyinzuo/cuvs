@@ -159,6 +159,31 @@ if(BUILD_TESTS)
   )
 
   ConfigureTest(
+    NAME NEIGHBORS_ANN_MY_ANNS_V1_TEST_BUGS PATH neighbors/ann_my_anns_v1/bug_extreme_inputs_oob.cu
+    neighbors/ann_my_anns_v1/bug_multi_cta_crash.cu GPUS 1 PERCENT 100
+  )
+
+  ConfigureTest(
+    NAME NEIGHBORS_ANN_MY_ANNS_V1_FLOAT_UINT32_TEST PATH neighbors/ann_my_anns_v1/test_float_uint32_t.cu GPUS
+    1 PERCENT 100
+  )
+
+  ConfigureTest(
+    NAME NEIGHBORS_ANN_MY_ANNS_V1_HALF_UINT32_TEST PATH neighbors/ann_my_anns_v1/test_half_uint32_t.cu GPUS 1
+    PERCENT 100
+  )
+
+  ConfigureTest(
+    NAME NEIGHBORS_ANN_MY_ANNS_V1_INT8_UINT32_TEST PATH neighbors/ann_my_anns_v1/test_int8_t_uint32_t.cu GPUS
+    1 PERCENT 100
+  )
+
+  ConfigureTest(
+    NAME NEIGHBORS_ANN_MY_ANNS_V1_UINT8_UINT32_TEST PATH neighbors/ann_my_anns_v1/test_uint8_t_uint32_t.cu
+    GPUS 1 PERCENT 100
+  )
+
+  ConfigureTest(
     NAME
     NEIGHBORS_ANN_NN_DESCENT_TEST
     PATH
@@ -190,6 +215,7 @@ if(BUILD_TESTS)
     PATH
     neighbors/dynamic_batching/test_brute_force.cu
     neighbors/dynamic_batching/test_cagra.cu
+    neighbors/dynamic_batching/test_my_anns_v1.cu
     neighbors/dynamic_batching/test_ivf_flat.cu
     neighbors/dynamic_batching/test_ivf_pq.cu
     GPUS
@@ -284,6 +310,7 @@ if(TARGET cuvs::c_api)
   ConfigureTest(NAME IVF_PQ_C_TEST PATH neighbors/run_ivf_pq_c.c neighbors/ann_ivf_pq_c.cu C_LIB)
 
   ConfigureTest(NAME CAGRA_C_TEST PATH neighbors/ann_cagra_c.cu C_LIB)
+  ConfigureTest(NAME MY_ANNS_V1_C_TEST PATH neighbors/ann_my_anns_v1_c.cu C_LIB)
 
   if(BUILD_CAGRA_HNSWLIB)
     ConfigureTest(NAME HNSW_C_TEST PATH neighbors/ann_hnsw_c.cu C_LIB)
