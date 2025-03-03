@@ -419,7 +419,8 @@ auto iterative_build_graph(
   // my_anns_v1's search() and optimize(). As for the size of the graph, instead
   // of targeting all nodes from the beginning, the number of nodes is
   // initially small, and the number of nodes is doubled with each iteration.
-  RAFT_LOG_INFO("Iteratively creating/improving graph index using my_anns_v1's search() and optimize()");
+  RAFT_LOG_INFO(
+    "Iteratively creating/improving graph index using my_anns_v1's search() and optimize()");
 
   // If dataset is a host matrix, change it to a device matrix. Also, if the
   // dimensionality of the dataset does not meet the alighnemt restriction,
@@ -535,11 +536,11 @@ auto iterative_build_graph(
         dev_distances.data_handle(), batch.size(), curr_topk);
 
       my_anns_v1::search(res,
-                                     search_params,
-                                     idx,
-                                     batch_dev_query_view,
-                                     batch_dev_neighbors_view,
-                                     batch_dev_distances_view);
+                         search_params,
+                         idx,
+                         batch_dev_query_view,
+                         batch_dev_neighbors_view,
+                         batch_dev_distances_view);
 
       auto batch_neighbors_view = raft::make_host_matrix_view<IdxT, int64_t>(
         neighbors.data_handle() + batch.offset() * curr_topk, batch.size(), curr_topk);
@@ -550,12 +551,14 @@ auto iterative_build_graph(
     }
 
     // Optimize graph
-    bool flag_last  = (curr_graph_size == final_graph_size);
-    curr_graph_size = curr_query_size;
-    my_anns_v1_graph     = raft::make_host_matrix<IdxT, int64_t>(0, 0);  // delete existing grahp
-    my_anns_v1_graph     = raft::make_host_matrix<IdxT, int64_t>(curr_graph_size, curr_graph_degree);
-    optimize<IdxT>(
-      res, neighbors.view(), my_anns_v1_graph.view(), flag_last ? params.guarantee_connectivity : 0);
+    bool flag_last   = (curr_graph_size == final_graph_size);
+    curr_graph_size  = curr_query_size;
+    my_anns_v1_graph = raft::make_host_matrix<IdxT, int64_t>(0, 0);  // delete existing grahp
+    my_anns_v1_graph = raft::make_host_matrix<IdxT, int64_t>(curr_graph_size, curr_graph_degree);
+    optimize<IdxT>(res,
+                   neighbors.view(),
+                   my_anns_v1_graph.view(),
+                   flag_last ? params.guarantee_connectivity : 0);
     if (flag_last) { break; }
   }
 
@@ -599,14 +602,16 @@ index<T, IdxT> build(
         my_anns_v1::graph_build_params::nn_descent_params(intermediate_degree, params.metric);
     } else {
       RAFT_LOG_DEBUG("Selecting IVF-PQ solver");
-      knn_build_params = my_anns_v1::graph_build_params::ivf_pq_params(dataset.extents(), params.metric);
+      knn_build_params =
+        my_anns_v1::graph_build_params::ivf_pq_params(dataset.extents(), params.metric);
     }
   }
-  RAFT_EXPECTS(
-    params.metric != BitwiseHamming ||
-      std::holds_alternative<my_anns_v1::graph_build_params::iterative_search_params>(knn_build_params),
-    "IVF_PQ and NN_DESCENT for my_anns_v1 graph build do not support BitwiseHamming as a metric. Please "
-    "use the iterative my_anns_v1 search build.");
+  RAFT_EXPECTS(params.metric != BitwiseHamming ||
+                 std::holds_alternative<my_anns_v1::graph_build_params::iterative_search_params>(
+                   knn_build_params),
+               "IVF_PQ and NN_DESCENT for my_anns_v1 graph build do not support BitwiseHamming as "
+               "a metric. Please "
+               "use the iterative my_anns_v1 search build.");
 
   auto my_anns_v1_graph = raft::make_host_matrix<IdxT, int64_t>(0, 0);
 
@@ -628,7 +633,8 @@ index<T, IdxT> build(
 
       if (nn_descent_params.graph_degree != intermediate_degree) {
         RAFT_LOG_WARN(
-          "Graph degree (%lu) for nn-descent needs to match my_anns_v1 intermediate graph degree (%lu), "
+          "Graph degree (%lu) for nn-descent needs to match my_anns_v1 intermediate graph degree "
+          "(%lu), "
           "aligning "
           "nn-descent graph_degree.",
           nn_descent_params.graph_degree,
@@ -669,23 +675,28 @@ index<T, IdxT> build(
   }
   if (params.attach_dataset_on_build) {
     try {
-      return index<T, IdxT>(
+      index<T, IdxT> index_with_dataset(
         res, params.metric, dataset, raft::make_const_mdspan(my_anns_v1_graph.view()));
+      index_with_dataset.precompute_entry_point_norms(res);
+      return index_with_dataset;
     } catch (std::bad_alloc& e) {
       RAFT_LOG_WARN(
-        "Insufficient GPU memory to construct my_anns_v1 index with dataset on GPU. Only the graph will "
+        "Insufficient GPU memory to construct my_anns_v1 index with dataset on GPU. Only the graph "
+        "will "
         "be added to the index");
       // We just add the graph. User is expected to update dataset separately (e.g allocating in
       // managed memory).
     } catch (raft::logic_error& e) {
       // The memory error can also manifest as logic_error.
       RAFT_LOG_WARN(
-        "Insufficient GPU memory to construct my_anns_v1 index with dataset on GPU. Only the graph will "
+        "Insufficient GPU memory to construct my_anns_v1 index with dataset on GPU. Only the graph "
+        "will "
         "be added to the index");
     }
   }
   index<T, IdxT> idx(res, params.metric);
   idx.update_graph(res, raft::make_const_mdspan(my_anns_v1_graph.view()));
+
   return idx;
 }
 }  // namespace cuvs::neighbors::my_anns_v1::detail

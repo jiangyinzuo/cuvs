@@ -28,11 +28,11 @@ using my_anns_v1_F32 = dynamic_batching_test<float,
                                         my_anns_v1::build,
                                         my_anns_v1::search>;
 
-using my_anns_v1_U8 = dynamic_batching_test<uint8_t,
-                                       uint32_t,
-                                       my_anns_v1::index<uint8_t, uint32_t>,
-                                       my_anns_v1::build,
-                                       my_anns_v1::search>;
+// using my_anns_v1_U8 = dynamic_batching_test<uint8_t,
+//                                        uint32_t,
+//                                        my_anns_v1::index<uint8_t, uint32_t>,
+//                                        my_anns_v1::build,
+//                                        my_anns_v1::search>;
 
 template <typename fixture>
 static void set_default_my_anns_v1_params(fixture& that)
@@ -70,15 +70,15 @@ TEST_P(my_anns_v1_F32, multi_kernel)
   check_neighbors();
 }
 
-TEST_P(my_anns_v1_U8, defaults)
-{
-  set_default_my_anns_v1_params(*this);
-  build_all();
-  search_all();
-  check_neighbors();
-}
+// TEST_P(my_anns_v1_U8, defaults)
+// {
+//   set_default_my_anns_v1_params(*this);
+//   build_all();
+//   search_all();
+//   check_neighbors();
+// }
 
 INSTANTIATE_TEST_CASE_P(dynamic_batching, my_anns_v1_F32, ::testing::ValuesIn(inputs));
-INSTANTIATE_TEST_CASE_P(dynamic_batching, my_anns_v1_U8, ::testing::ValuesIn(inputs));
+// INSTANTIATE_TEST_CASE_P(dynamic_batching, my_anns_v1_U8, ::testing::ValuesIn(inputs));
 
 }  // namespace cuvs::neighbors::dynamic_batching

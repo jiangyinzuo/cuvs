@@ -205,6 +205,7 @@ struct search : public search_plan_impl<DataT, IndexT, DistanceT, SAMPLE_FILTER_
   ~search() {}
 
   void operator()(raft::resources const& res,
+                  const index<DATA_T, INDEX_T>& index, // used for entry points GEMM distance computation
                   raft::device_matrix_view<const INDEX_T, int64_t, raft::row_major> graph,
                   INDEX_T* const topk_indices_ptr,       // [num_queries, topk]
                   DISTANCE_T* const topk_distances_ptr,  // [num_queries, topk]
@@ -214,7 +215,7 @@ struct search : public search_plan_impl<DataT, IndexT, DistanceT, SAMPLE_FILTER_
                   uint32_t* const num_executed_iterations,  // [num_queries,]
                   uint32_t topk,
                   SAMPLE_FILTER_T sample_filter
-  )
+  ) override
   {
     auto stream = raft::resource::get_cuda_stream(res);
     select_and_run(dataset_desc,

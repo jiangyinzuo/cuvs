@@ -20,6 +20,7 @@
 #include "bitonic.hpp"
 #include "compute_distance-ext.cuh"
 #include "device_common.hpp"
+#include "entry_points_policy.cuh"
 #include "graph_analysis_macros.h"
 #include "hashmap.hpp"
 #include "search_plan.cuh"
@@ -34,8 +35,8 @@
 #include <raft/core/resource/device_properties.hpp>
 #include <raft/core/resources.hpp>
 
-#include <cuvs/neighbors/my_anns_v1_metrics.cuh>
 #include <cuvs/neighbors/common.hpp>
+#include <cuvs/neighbors/my_anns_v1_metrics.cuh>
 
 // TODO: This shouldn't be invoking anything from spatial/knn
 #include "../ann_utils.cuh"
@@ -514,7 +515,8 @@ template <unsigned MAX_ITOPK,
           unsigned MAX_CANDIDATES,
           unsigned TOPK_BY_BITONIC_SORT,
           class DATASET_DESCRIPTOR_T,
-          class SAMPLE_FILTER_T>
+          class SAMPLE_FILTER_T,
+          class EntryPointsPolicy>
 __device__ void search_core(
   typename DATASET_DESCRIPTOR_T::INDEX_T* const result_indices_ptr,       // [num_queries, top_k]
   typename DATASET_DESCRIPTOR_T::DISTANCE_T* const result_distances_ptr,  // [num_queries, top_k]
@@ -523,12 +525,10 @@ __device__ void search_core(
   const typename DATASET_DESCRIPTOR_T::DATA_T* const queries_ptr,  // [num_queries, dataset_dim]
   const typename DATASET_DESCRIPTOR_T::INDEX_T* const knn_graph,   // [dataset_size, graph_degree]
   const std::uint32_t graph_degree,
-  const unsigned num_distilation,
-  const uint64_t rand_xor_mask,
-  const typename DATASET_DESCRIPTOR_T::INDEX_T* seed_ptr,  // [num_queries, num_seeds]
-  const uint32_t num_seeds,
   typename DATASET_DESCRIPTOR_T::INDEX_T* const
     visited_hashmap_ptr,  // [num_queries, 1 << hash_bitlen]
+  // TODO(jiangyinzuo): add args
+  // const std::uint32_t num_entry_points,
   const std::uint32_t internal_topk,
   const std::uint32_t search_width,
   const std::uint32_t min_iteration,
@@ -538,7 +538,8 @@ __device__ void search_core(
   const std::uint32_t small_hash_bitlen,
   const std::uint32_t small_hash_reset_interval,
   const std::uint32_t query_id,
-  SAMPLE_FILTER_T sample_filter
+  SAMPLE_FILTER_T sample_filter,
+  const EntryPointsPolicy& entry_points_policy
 #ifdef _GRAPH_QUALITY_ANALYSIS
   ,
   MyAnnsV1Metrics* my_anns_v1_metrics
@@ -550,6 +551,12 @@ __device__ void search_core(
   using DATA_T     = typename DATASET_DESCRIPTOR_T::DATA_T;
   using INDEX_T    = typename DATASET_DESCRIPTOR_T::INDEX_T;
   using DISTANCE_T = typename DATASET_DESCRIPTOR_T::DISTANCE_T;
+
+  static_assert(
+    std::is_same_v<EntryPointsPolicy,
+                   ComputeRandomEntryPoints<INDEX_T>> ||
+      std::is_same_v<EntryPointsPolicy, MemcpyEntryPoints<INDEX_T, DISTANCE_T>>,
+    "Unknown EntryPointsPolicy");
 
 #ifdef _GRAPH_QUALITY_ANALYSIS
   __shared__ uint64_t local_distance_calculation_counter1;
@@ -630,26 +637,27 @@ __device__ void search_core(
 
   // compute distance to randomly selecting nodes
   // _CLK_START();
-  const INDEX_T* const local_seed_ptr = seed_ptr ? seed_ptr + (num_seeds * query_id) : nullptr;
-  device::compute_distance_to_random_nodes(result_indices_buffer,
-                                           result_distances_buffer,
-                                           *dataset_desc,
-                                           result_buffer_size,
-                                           num_distilation,
-                                           rand_xor_mask,
-                                           local_seed_ptr,
-                                           num_seeds,
-                                           local_visited_hashmap_ptr,
-                                           hash_bitlen,
-                                           (INDEX_T*)nullptr,
-                                           0
+  if constexpr (std::is_same_v<
+                  EntryPointsPolicy,
+                  ComputeRandomEntryPoints<INDEX_T>>) {
+    entry_points_policy(query_id,
+                        result_indices_buffer,
+                        result_distances_buffer,
+                        dataset_desc,
+                        result_buffer_size,
+                        local_visited_hashmap_ptr,
+                        hash_bitlen
 #ifdef _GRAPH_QUALITY_ANALYSIS
-                                           ,
-                                           my_anns_v1_metrics,
-                                           &local_distance_calculation_counter1,
-                                           &local_distance_calculation_counter2
+                        ,
+                        my_anns_v1_metrics,
+                        &local_distance_calculation_counter1,
+                        &local_distance_calculation_counter2
 #endif
-  );
+    );
+  } else if constexpr (std::is_same_v<EntryPointsPolicy, MemcpyEntryPoints<INDEX_T, DISTANCE_T>>) {
+    entry_points_policy(query_id, result_indices_buffer, result_distances_buffer, internal_topk);
+  }
+
   __syncthreads();
   // _CLK_REC(clk_compute_1st_distance);
 
@@ -798,7 +806,8 @@ __device__ void search_core(
                                             0,
                                             parent_list_buffer,
                                             result_indices_buffer,
-                                            search_width
+                                            search_width,
+                                            entry_points_policy
 #ifdef _GRAPH_QUALITY_ANALYSIS
                                             ,
                                             my_anns_v1_metrics,
@@ -972,8 +981,8 @@ __device__ void search_core(
               local_distance_calculation_counter2);
     atomicAdd(&my_anns_v1_metrics->global_distance_calculation_counter3_4_counter, 1UL);
     // printf(
-    //   "GRAPH: my_anns_v1-single-cta, file: %s, line: %d, query_id: %u, num_executed_iterations: %u, "
-    //   "min_iteration: %u, max_iteration: %u, local_distance_calculation_counter1: %lu, "
+    //   "GRAPH: my_anns_v1-single-cta, file: %s, line: %d, query_id: %u, num_executed_iterations:
+    //   %u, " "min_iteration: %u, max_iteration: %u, local_distance_calculation_counter1: %lu, "
     //   "local_distance_calculation_counter2: %lu\n",
     //   __FILE__,
     //   __LINE__,
@@ -985,8 +994,8 @@ __device__ void search_core(
     //   local_distance_calculation_counter2);
     // if (query_id == 0) {
     //   printf(
-    //     "GRAPH: my_anns_v1-single-cta, file: %s, line: %d, global_distance_calculation_counter1: %lu,
-    //     " "global_distance_calculation_counter2: %lu, num_queries: %u\n",
+    //     "GRAPH: my_anns_v1-single-cta, file: %s, line: %d, global_distance_calculation_counter1:
+    //     %lu, " "global_distance_calculation_counter2: %lu, num_queries: %u\n",
     //     __FILE__,
     //     __LINE__,
     //     *graph_metrics_global_distance_calculation_counter1_ptr,
@@ -1001,7 +1010,8 @@ template <unsigned MAX_ITOPK,
           unsigned MAX_CANDIDATES,
           unsigned TOPK_BY_BITONIC_SORT,
           class DATASET_DESCRIPTOR_T,
-          class SAMPLE_FILTER_T>
+          class SAMPLE_FILTER_T,
+          class EntryPointsPolicy>
 #ifndef NDEBUG
 RAFT_KERNEL search_kernel(
 #else
@@ -1014,12 +1024,9 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
   const typename DATASET_DESCRIPTOR_T::DATA_T* const queries_ptr,  // [num_queries, dataset_dim]
   const typename DATASET_DESCRIPTOR_T::INDEX_T* const knn_graph,   // [dataset_size, graph_degree]
   const std::uint32_t graph_degree,
-  const unsigned num_distilation,
-  const uint64_t rand_xor_mask,
-  const typename DATASET_DESCRIPTOR_T::INDEX_T* seed_ptr,  // [num_queries, num_seeds]
-  const uint32_t num_seeds,
   typename DATASET_DESCRIPTOR_T::INDEX_T* const
     visited_hashmap_ptr,  // [num_queries, 1 << hash_bitlen]
+  // const std::uint32_t num_entry_points,
   const std::uint32_t internal_topk,
   const std::uint32_t search_width,
   const std::uint32_t min_iteration,
@@ -1028,7 +1035,8 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
   const std::uint32_t hash_bitlen,
   const std::uint32_t small_hash_bitlen,
   const std::uint32_t small_hash_reset_interval,
-  SAMPLE_FILTER_T sample_filter
+  SAMPLE_FILTER_T sample_filter,
+  const EntryPointsPolicy& entry_points_policy
 #ifdef _GRAPH_QUALITY_ANALYSIS
   ,
   MyAnnsV1Metrics* my_anns_v1_metrics
@@ -1040,31 +1048,30 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
               MAX_CANDIDATES,
               TOPK_BY_BITONIC_SORT,
               DATASET_DESCRIPTOR_T,
-              SAMPLE_FILTER_T>(result_indices_ptr,
-                               result_distances_ptr,
-                               top_k,
-                               dataset_desc,
-                               queries_ptr,
-                               knn_graph,
-                               graph_degree,
-                               num_distilation,
-                               rand_xor_mask,
-                               seed_ptr,
-                               num_seeds,
-                               visited_hashmap_ptr,
-                               internal_topk,
-                               search_width,
-                               min_iteration,
-                               max_iteration,
-                               num_executed_iterations,
-                               hash_bitlen,
-                               small_hash_bitlen,
-                               small_hash_reset_interval,
-                               query_id,
-                               sample_filter
+              SAMPLE_FILTER_T,
+              EntryPointsPolicy>(result_indices_ptr,
+                                 result_distances_ptr,
+                                 top_k,
+                                 dataset_desc,
+                                 queries_ptr,
+                                 knn_graph,
+                                 graph_degree,
+                                 visited_hashmap_ptr,
+                                 // num_entry_points,
+                                 internal_topk,
+                                 search_width,
+                                 min_iteration,
+                                 max_iteration,
+                                 num_executed_iterations,
+                                 hash_bitlen,
+                                 small_hash_bitlen,
+                                 small_hash_reset_interval,
+                                 query_id,
+                                 sample_filter,
+                                 entry_points_policy
 #ifdef _GRAPH_QUALITY_ANALYSIS
-                               ,
-                               my_anns_v1_metrics
+                                 ,
+                                 my_anns_v1_metrics
 #endif
   );
 }
@@ -1132,7 +1139,8 @@ template <unsigned MAX_ITOPK,
           unsigned MAX_CANDIDATES,
           unsigned TOPK_BY_BITONIC_SORT,
           class DATASET_DESCRIPTOR_T,
-          class SAMPLE_FILTER_T>
+          class SAMPLE_FILTER_T,
+          class EntryPointsPolicy>
 #ifndef NDEBUG
 RAFT_KERNEL search_kernel_p(
 #else
@@ -1144,10 +1152,6 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel_p(
   uint32_t* completion_counters,
   const typename DATASET_DESCRIPTOR_T::INDEX_T* const knn_graph,  // [dataset_size, graph_degree]
   const std::uint32_t graph_degree,
-  const unsigned num_distilation,
-  const uint64_t rand_xor_mask,
-  const typename DATASET_DESCRIPTOR_T::INDEX_T* seed_ptr,  // [num_queries, num_seeds]
-  const uint32_t num_seeds,
   typename DATASET_DESCRIPTOR_T::INDEX_T* const
     visited_hashmap_ptr,  // [num_queries, 1 << hash_bitlen]
   const std::uint32_t internal_topk,
@@ -1158,7 +1162,8 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel_p(
   const std::uint32_t hash_bitlen,
   const std::uint32_t small_hash_bitlen,
   const std::uint32_t small_hash_reset_interval,
-  SAMPLE_FILTER_T sample_filter
+  SAMPLE_FILTER_T sample_filter,
+  EntryPointsPolicy entry_points_policy
 #ifdef _GRAPH_QUALITY_ANALYSIS
   ,
   MyAnnsV1Metrics* my_anns_v1_metrics
@@ -1210,31 +1215,29 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel_p(
                 MAX_CANDIDATES,
                 TOPK_BY_BITONIC_SORT,
                 DATASET_DESCRIPTOR_T,
-                SAMPLE_FILTER_T>(result_indices_ptr,
-                                 result_distances_ptr,
-                                 top_k,
-                                 dataset_desc,
-                                 queries_ptr,
-                                 knn_graph,
-                                 graph_degree,
-                                 num_distilation,
-                                 rand_xor_mask,
-                                 seed_ptr,
-                                 num_seeds,
-                                 visited_hashmap_ptr,
-                                 internal_topk,
-                                 search_width,
-                                 min_iteration,
-                                 max_iteration,
-                                 num_executed_iterations,
-                                 hash_bitlen,
-                                 small_hash_bitlen,
-                                 small_hash_reset_interval,
-                                 query_id,
-                                 sample_filter
+                SAMPLE_FILTER_T,
+                EntryPointsPolicy>(result_indices_ptr,
+                                   result_distances_ptr,
+                                   top_k,
+                                   dataset_desc,
+                                   queries_ptr,
+                                   knn_graph,
+                                   graph_degree,
+                                   visited_hashmap_ptr,
+                                   internal_topk,
+                                   search_width,
+                                   min_iteration,
+                                   max_iteration,
+                                   num_executed_iterations,
+                                   hash_bitlen,
+                                   small_hash_bitlen,
+                                   small_hash_reset_interval,
+                                   query_id,
+                                   sample_filter,
+                                   entry_points_policy
 #ifdef _GRAPH_QUALITY_ANALYSIS
-                                 ,
-                                 my_anns_v1_metrics
+                                   ,
+                                   my_anns_v1_metrics
 #endif
     );
 
@@ -1258,59 +1261,77 @@ template <bool Persistent,
           unsigned MAX_CANDIDATES,
           unsigned TOPK_BY_BITONIC_SORT,
           class DATASET_DESCRIPTOR_T,
-          class SAMPLE_FILTER_T>
+          class SAMPLE_FILTER_T,
+          class EntryPointsPolicy>
 auto dispatch_kernel = []() {
   if constexpr (Persistent) {
     return search_kernel_p<MAX_ITOPK,
                            MAX_CANDIDATES,
                            TOPK_BY_BITONIC_SORT,
                            DATASET_DESCRIPTOR_T,
-                           SAMPLE_FILTER_T>;
+                           SAMPLE_FILTER_T,
+                           EntryPointsPolicy>;
   } else {
     return search_kernel<MAX_ITOPK,
                          MAX_CANDIDATES,
                          TOPK_BY_BITONIC_SORT,
                          DATASET_DESCRIPTOR_T,
-                         SAMPLE_FILTER_T>;
+                         SAMPLE_FILTER_T,
+                         EntryPointsPolicy>;
   }
 }();
 
-template <bool Persistent, typename DATASET_DESCRIPTOR_T, typename SAMPLE_FILTER_T>
+template <bool Persistent,
+          typename DATASET_DESCRIPTOR_T,
+          typename SAMPLE_FILTER_T,
+          typename EntryPointsPolicy>
 struct search_kernel_config {
-  using kernel_t =
-    decltype(dispatch_kernel<Persistent, 64, 64, 0, DATASET_DESCRIPTOR_T, SAMPLE_FILTER_T>);
+  using kernel_t = decltype(dispatch_kernel<Persistent,
+                                            64,
+                                            64,
+                                            0,
+                                            DATASET_DESCRIPTOR_T,
+                                            SAMPLE_FILTER_T,
+                                            EntryPointsPolicy>);
 
   template <unsigned MAX_CANDIDATES, unsigned USE_BITONIC_SORT>
   static auto choose_search_kernel(unsigned itopk_size) -> kernel_t
   {
+    if (itopk_size % 4 != 0) {
+      THROW("itopk_size must be a multiple of 4, but got %u", itopk_size);
+    }
     if (itopk_size <= 64) {
       return dispatch_kernel<Persistent,
                              64,
                              MAX_CANDIDATES,
                              USE_BITONIC_SORT,
                              DATASET_DESCRIPTOR_T,
-                             SAMPLE_FILTER_T>;
+                             SAMPLE_FILTER_T,
+                             EntryPointsPolicy>;
     } else if (itopk_size <= 128) {
       return dispatch_kernel<Persistent,
                              128,
                              MAX_CANDIDATES,
                              USE_BITONIC_SORT,
                              DATASET_DESCRIPTOR_T,
-                             SAMPLE_FILTER_T>;
+                             SAMPLE_FILTER_T,
+                             EntryPointsPolicy>;
     } else if (itopk_size <= 256) {
       return dispatch_kernel<Persistent,
                              256,
                              MAX_CANDIDATES,
                              USE_BITONIC_SORT,
                              DATASET_DESCRIPTOR_T,
-                             SAMPLE_FILTER_T>;
+                             SAMPLE_FILTER_T,
+                             EntryPointsPolicy>;
     } else if (itopk_size <= 512) {
       return dispatch_kernel<Persistent,
                              512,
                              MAX_CANDIDATES,
                              USE_BITONIC_SORT,
                              DATASET_DESCRIPTOR_T,
-                             SAMPLE_FILTER_T>;
+                             SAMPLE_FILTER_T,
+                             EntryPointsPolicy>;
     }
     THROW("No kernel for parametels itopk_size %u, max_candidates %u", itopk_size, MAX_CANDIDATES);
   }
@@ -1335,14 +1356,16 @@ struct search_kernel_config {
                                max_candidates,
                                0,
                                DATASET_DESCRIPTOR_T,
-                               SAMPLE_FILTER_T>;
+                               SAMPLE_FILTER_T,
+                               EntryPointsPolicy>;
       } else if (itopk_size <= 512) {
         return dispatch_kernel<Persistent,
                                512,
                                max_candidates,
                                0,
                                DATASET_DESCRIPTOR_T,
-                               SAMPLE_FILTER_T>;
+                               SAMPLE_FILTER_T,
+                               EntryPointsPolicy>;
       }
     }
     THROW("No kernel for parametels itopk_size %u, num_itopk_candidates %u",
@@ -1775,7 +1798,8 @@ struct alignas(kCacheLineBytes) launcher_t {
     } else {
       // Missed the deadline: throw an exception
       throw raft::exception(
-        "The calling thread didn't receive the results from the persistent my_anns_v1 kernel within the "
+        "The calling thread didn't receive the results from the persistent my_anns_v1 kernel "
+        "within the "
         "expected kernel lifetime. Here are possible reasons of this failure:\n"
         "  (1) `persistent_lifetime` search parameter is too small - increase it;\n"
         "  (2) there is other work being executed on the same device and the kernel failed to "
@@ -1813,15 +1837,20 @@ struct alignas(kCacheLineBytes) launcher_t {
   }
 };
 
-template <typename DataT, typename IndexT, typename DistanceT, typename SampleFilterT>
+template <typename DataT,
+          typename IndexT,
+          typename DistanceT,
+          typename SampleFilterT,
+          typename EntryPointsPolicy>
 struct alignas(kCacheLineBytes) persistent_runner_t : public persistent_runner_base_t {
   using descriptor_base_type = dataset_descriptor_base_t<DataT, IndexT, DistanceT>;
   using index_type           = IndexT;
   using distance_type        = DistanceT;
   using data_type            = DataT;
-  using kernel_config_type   = search_kernel_config<true, descriptor_base_type, SampleFilterT>;
-  using kernel_type          = typename kernel_config_type::kernel_t;
-  using job_desc_type        = job_desc_t<descriptor_base_type>;
+  using kernel_config_type =
+    search_kernel_config<true, descriptor_base_type, SampleFilterT, EntryPointsPolicy>;
+  using kernel_type   = typename kernel_config_type::kernel_t;
+  using job_desc_type = job_desc_t<descriptor_base_type>;
   kernel_type kernel;
   uint32_t block_size;
   dataset_descriptor_host<DataT, IndexT, DistanceT> dd_host;
@@ -2140,14 +2169,17 @@ auto get_runner(Args... args) -> std::shared_ptr<RunnerT>
   return runner;
 }
 
-template <typename DataT, typename IndexT, typename DistanceT, typename SampleFilterT>
+template <typename DataT,
+          typename IndexT,
+          typename DistanceT,
+          typename SampleFilterT,
+          typename EntryPointsPolicy>
 void select_and_run(const dataset_descriptor_host<DataT, IndexT, DistanceT>& dataset_desc,
                     raft::device_matrix_view<const IndexT, int64_t, raft::row_major> graph,
                     IndexT* topk_indices_ptr,       // [num_queries, topk]
                     DistanceT* topk_distances_ptr,  // [num_queries, topk]
                     const DataT* queries_ptr,       // [num_queries, dataset_dim]
                     uint32_t num_queries,
-                    const IndexT* dev_seed_ptr,         // [num_queries, num_seeds]
                     uint32_t* num_executed_iterations,  // [num_queries,]
                     const search_params& ps,
                     uint32_t topk,
@@ -2158,44 +2190,21 @@ void select_and_run(const dataset_descriptor_host<DataT, IndexT, DistanceT>& dat
                     IndexT* hashmap_ptr,
                     size_t small_hash_bitlen,
                     size_t small_hash_reset_interval,
-                    uint32_t num_seeds,
                     SampleFilterT sample_filter,
+                    const EntryPointsPolicy& entry_points_policy,
 #ifdef _GRAPH_QUALITY_ANALYSIS
                     MyAnnsV1Metrics* my_anns_v1_metrics,
 #endif
                     cudaStream_t stream)
 {
   if (ps.persistent) {
-    using runner_type = persistent_runner_t<DataT, IndexT, DistanceT, SampleFilterT>;
-
-    get_runner<runner_type>(/*
-Note, we're passing the descriptor by reference here, and this reference is going to be passed to a
-new spawned thread, which is dangerous. However, the descriptor is copied in that thread before the
-control is returned in this thread (in persistent_runner_t constructor), so we're safe.
-*/
-                            std::cref(dataset_desc),
-                            graph,
-                            num_itopk_candidates,
-                            block_size,
-                            smem_size,
-                            hash_bitlen,
-                            small_hash_bitlen,
-                            small_hash_reset_interval,
-                            ps.num_random_samplings,
-                            ps.rand_xor_mask,
-                            num_seeds,
-                            ps.itopk_size,
-                            ps.search_width,
-                            ps.min_iterations,
-                            ps.max_iterations,
-                            sample_filter,
-                            ps.persistent_lifetime,
-                            ps.persistent_device_usage)
-      ->launch(topk_indices_ptr, topk_distances_ptr, queries_ptr, num_queries, topk);
+    // TODO(jiangyinzuo): implement persistent mode
+    THROW("Persistent search is not supported for the my_anns_v1 kernel.");
   } else {
     using descriptor_base_type = dataset_descriptor_base_t<DataT, IndexT, DistanceT>;
-    auto kernel                = search_kernel_config<false, descriptor_base_type, SampleFilterT>::
-      choose_itopk_and_mx_candidates(ps.itopk_size, num_itopk_candidates, block_size);
+    auto kernel =
+      search_kernel_config<false, descriptor_base_type, SampleFilterT, EntryPointsPolicy>::
+        choose_itopk_and_mx_candidates(ps.itopk_size, num_itopk_candidates, block_size);
     RAFT_CUDA_TRY(
       cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size));
     dim3 thread_dims(block_size, 1, 1);
@@ -2209,10 +2218,6 @@ control is returned in this thread (in persistent_runner_t constructor), so we'r
                                                            queries_ptr,
                                                            graph.data_handle(),
                                                            graph.extent(1),
-                                                           ps.num_random_samplings,
-                                                           ps.rand_xor_mask,
-                                                           dev_seed_ptr,
-                                                           num_seeds,
                                                            hashmap_ptr,
                                                            ps.itopk_size,
                                                            ps.search_width,
@@ -2222,7 +2227,8 @@ control is returned in this thread (in persistent_runner_t constructor), so we'r
                                                            hash_bitlen,
                                                            small_hash_bitlen,
                                                            small_hash_reset_interval,
-                                                           sample_filter
+                                                           sample_filter,
+                                                           entry_points_policy
 #ifdef _GRAPH_QUALITY_ANALYSIS
                                                            ,
                                                            my_anns_v1_metrics

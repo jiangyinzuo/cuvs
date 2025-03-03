@@ -17,7 +17,9 @@
 
 #include "bitonic.hpp"
 #include "compute_distance-ext.cuh"
+#include "compute_entry_points_distance.cuh"
 #include "device_common.hpp"
+#include "entry_points_policy.cuh"
 #include "hashmap.hpp"
 #include "search_plan.cuh"
 #include "search_single_cta_kernel.cuh"
@@ -62,6 +64,7 @@ struct search : search_plan_impl<DataT, IndexT, DistanceT, SAMPLE_FILTER_T> {
   using base_type::max_iterations;
   using base_type::max_queries;
   using base_type::min_iterations;
+  using base_type::num_entry_points;
   using base_type::num_random_samplings;
   using base_type::rand_xor_mask;
   using base_type::search_width;
@@ -82,10 +85,10 @@ struct search : search_plan_impl<DataT, IndexT, DistanceT, SAMPLE_FILTER_T> {
 
   using base_type::smem_size;
 
-  using base_type::my_anns_v1_metrics;
   using base_type::dataset_desc;
   using base_type::dev_seed;
   using base_type::hashmap;
+  using base_type::my_anns_v1_metrics;
   using base_type::num_executed_iterations;
   using base_type::num_seeds;
 
@@ -216,53 +219,106 @@ struct search : search_plan_impl<DataT, IndexT, DistanceT, SAMPLE_FILTER_T> {
     RAFT_LOG_DEBUG("# hashmap_size: %lu", hashmap_size);
   }
 
-  void operator()(raft::resources const& res,
-                  raft::device_matrix_view<const INDEX_T, int64_t, raft::row_major> graph,
-                  INDEX_T* const result_indices_ptr,       // [num_queries, topk]
-                  DISTANCE_T* const result_distances_ptr,  // [num_queries, topk]
-                  const DATA_T* const queries_ptr,         // [num_queries, dataset_dim]
-                  const std::uint32_t num_queries,
-                  const INDEX_T* dev_seed_ptr,                   // [num_queries, num_seeds]
-                  std::uint32_t* const num_executed_iterations,  // [num_queries]
-                  uint32_t topk,
-                  SAMPLE_FILTER_T sample_filter)
+  void operator()(
+    raft::resources const& res,
+    const index<DATA_T, INDEX_T>& index,  // used for entry points GEMM distance computation
+    raft::device_matrix_view<const INDEX_T, int64_t, raft::row_major> graph,
+    INDEX_T* const result_indices_ptr,       // [num_queries, topk]
+    DISTANCE_T* const result_distances_ptr,  // [num_queries, topk]
+    const DATA_T* const queries_ptr,         // [num_queries, dataset_dim]
+    const std::uint32_t num_queries,
+    const INDEX_T* dev_seed_ptr,                   // [num_queries, num_seeds]
+    std::uint32_t* const num_executed_iterations,  // [num_queries]
+    uint32_t topk,
+    SAMPLE_FILTER_T sample_filter) override
   {
     auto stream = raft::resource::get_cuda_stream(res);
-    select_and_run(dataset_desc,
-                   graph,
-                   result_indices_ptr,
-                   result_distances_ptr,
-                   queries_ptr,
-                   num_queries,
-                   dev_seed_ptr,
-                   num_executed_iterations,
-                   *this,
-                   topk,
-                   num_itopk_candidates,
-                   static_cast<uint32_t>(thread_block_size),
-                   smem_size,
-                   hash_bitlen,
-                   hashmap.data(),
-                   small_hash_bitlen,
-                   small_hash_reset_interval,
-                   num_seeds,
-                   sample_filter,
+    const ComputeRandomEntryPoints<IndexT> compute_random_entry_points(
+      dev_seed_ptr, num_seeds, num_random_samplings, rand_xor_mask);
+    if (this->num_entry_points == 0) {
+      select_and_run(dataset_desc,
+                     graph,
+                     result_indices_ptr,
+                     result_distances_ptr,
+                     queries_ptr,
+                     num_queries,
+                     num_executed_iterations,
+                     *this,
+                     topk,
+                     num_itopk_candidates,
+                     static_cast<uint32_t>(thread_block_size),
+                     smem_size,
+                     hash_bitlen,
+                     hashmap.data(),
+                     small_hash_bitlen,
+                     small_hash_reset_interval,
+                     sample_filter,
+                     compute_random_entry_points,
 #ifdef _GRAPH_QUALITY_ANALYSIS
-                   my_anns_v1_metrics.data(),
+                     my_anns_v1_metrics.data(),
 #endif
-                   stream);
+                     stream);
+    } else {
+      auto stream                              = raft::resource::get_cuda_stream(res);
+      rmm::device_async_resource_ref search_mr = raft::resource::get_workspace_resource(res);
+      const std::size_t coarse_buffer_size =
+        std::size_t(num_queries) * std::size_t(num_entry_points);
+      // The topk distance value of cluster(list) and queries
+      rmm::device_uvector<DistanceT> coarse_distances_dev(coarse_buffer_size, stream, search_mr);
+      // The topk  index of cluster(list) and queries
+      rmm::device_uvector<IndexT> coarse_indices_dev(coarse_buffer_size, stream, search_mr);
+
+      // compute distances between queries and entry points
+      compute_entry_point_distances<DataT, IndexT, DistanceT>(index,
+                                                              res,
+                                                              queries_ptr,
+                                                              num_queries,
+                                                              num_entry_points,
+                                                              itopk_size,
+                                                              coarse_distances_dev.data(),
+                                                              coarse_indices_dev.data());
+      const MemcpyEntryPoints<IndexT, DistanceT> memcpy_entry_points(
+        coarse_indices_dev.data(), coarse_distances_dev.data(), num_entry_points);
+      select_and_run(dataset_desc,
+                     graph,
+                     result_indices_ptr,
+                     result_distances_ptr,
+                     queries_ptr,
+                     num_queries,
+                     num_executed_iterations,
+                     *this,
+                     topk,
+                     num_itopk_candidates,
+                     static_cast<uint32_t>(thread_block_size),
+                     smem_size,
+                     hash_bitlen,
+                     hashmap.data(),
+                     small_hash_bitlen,
+                     small_hash_reset_interval,
+                     sample_filter,
+                     memcpy_entry_points,
+#ifdef _GRAPH_QUALITY_ANALYSIS
+                     my_anns_v1_metrics.data(),
+#endif
+                     stream);
+    }
 
 #ifdef _GRAPH_QUALITY_ANALYSIS
     uint32_t* my_num_executed_iterations_host = new uint32_t[num_queries];
-    raft::update_host(my_num_executed_iterations_host, num_executed_iterations, num_queries, stream);
+    raft::update_host(
+      my_num_executed_iterations_host, num_executed_iterations, num_queries, stream);
     // copy the metrics back to host
     MyAnnsV1Metrics my_anns_v1_metrics_host;
     raft::update_host(&my_anns_v1_metrics_host, my_anns_v1_metrics.data(), 1, stream);
     // sync the cuda_stream
     raft::resource::sync_stream(res, stream);
     // uint32_t* num_executed_iterations_host = new uint32_t[num_queries];
-    // raft::update_host(num_executed_iterations_host, num_executed_iterations, num_queries, stream);
-    MyAnnsV1MetricsAccumulator::get_instance().accumulate(my_anns_v1_metrics_host, my_num_executed_iterations_host, num_queries, MyAnnsV1KernelTyp::kSingleCta);
+    // raft::update_host(num_executed_iterations_host, num_executed_iterations, num_queries,
+    // stream);
+    MyAnnsV1MetricsAccumulator::get_instance().accumulate(my_anns_v1_metrics_host,
+                                                          my_num_executed_iterations_host,
+                                                          num_queries,
+                                                          MyAnnsV1KernelTyp::kSingleCta);
 #endif
   }
 };

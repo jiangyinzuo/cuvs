@@ -173,14 +173,22 @@ if(BUILD_TESTS)
     PERCENT 100
   )
 
+  # ConfigureTest(
+  #   NAME NEIGHBORS_ANN_MY_ANNS_V1_INT8_UINT32_TEST PATH neighbors/ann_my_anns_v1/test_int8_t_uint32_t.cu GPUS
+  #   1 PERCENT 100
+  # )
+  #
+  # ConfigureTest(
+  #   NAME NEIGHBORS_ANN_MY_ANNS_V1_UINT8_UINT32_TEST PATH neighbors/ann_my_anns_v1/test_uint8_t_uint32_t.cu
+  #   GPUS 1 PERCENT 100
+  # )
+
   ConfigureTest(
-    NAME NEIGHBORS_ANN_MY_ANNS_V1_INT8_UINT32_TEST PATH neighbors/ann_my_anns_v1/test_int8_t_uint32_t.cu GPUS
-    1 PERCENT 100
+      NAME NEIGHBORS_ANN_MY_ANNS_V1_MEMCPY_POLICY_TEST PATH neighbors/ann_my_anns_v1/memcpy_policy.cu GPUS 1 PERCENT 100
   )
 
   ConfigureTest(
-    NAME NEIGHBORS_ANN_MY_ANNS_V1_UINT8_UINT32_TEST PATH neighbors/ann_my_anns_v1/test_uint8_t_uint32_t.cu
-    GPUS 1 PERCENT 100
+      NAME NEIGHBORS_ANN_MY_ANNS_V1_GEMM_PRECOMPUTE_NORM_TEST PATH neighbors/ann_my_anns_v1/gemm_precompute_norm.cu GPUS 1 PERCENT 100
   )
 
   ConfigureTest(

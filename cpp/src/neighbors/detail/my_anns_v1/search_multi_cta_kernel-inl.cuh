@@ -49,6 +49,7 @@
 #include <memory>
 #include <numeric>
 #include <vector>
+#include "entry_points_policy.cuh"
 
 namespace cuvs::neighbors::my_anns_v1::detail {
 namespace multi_cta_search {
@@ -354,8 +355,9 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
     if (threadIdx.x == blockDim.x - 1) { result_position[0] = result_buffer_size_32; }
     __syncthreads();
 
+    const AlwaysUnvisited always_unvisited;
     // Compute the norms between child nodes and query node
-    device::compute_distance_to_child_nodes<INDEX_T, DISTANCE_T, DATASET_DESCRIPTOR_T, 0>(
+    device::compute_distance_to_child_nodes<INDEX_T, DISTANCE_T, DATASET_DESCRIPTOR_T, AlwaysUnvisited, 0>(
       result_indices_buffer,
       result_distances_buffer,
       *dataset_desc,
@@ -368,6 +370,7 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
       parent_indices_buffer,
       result_indices_buffer,
       1,
+      always_unvisited,
       result_position,
       result_buffer_size_32
 #ifdef _GRAPH_QUALITY_ANALYSIS

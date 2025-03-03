@@ -70,12 +70,13 @@ for type_path, (data_t, idx_t, distance_t) in search_types.items():
     path = f"search_single_cta_{type_path}.cu"
     with open(path, "w") as f:
         f.write(header)
-        f.write(
-                f"instantiate_kernel_selection(\n  {data_t}, {idx_t}, {distance_t}, cuvs::neighbors::filtering::none_sample_filter);\n"
-        )
-        f.write(
-                f"instantiate_kernel_selection(\n  {data_t}, {idx_t}, {distance_t}, my_anns_v1SampleFilterWithQueryIdOffset<cuvs::neighbors::filtering::bitset_filter<uint32_t COMMA int64_t>>);\n"
-        )
+        for sample_filter in ("cuvs::neighbors::filtering::none_sample_filter", "my_anns_v1SampleFilterWithQueryIdOffset<cuvs::neighbors::filtering::bitset_filter<uint32_t COMMA int64_t>>"):
+            for entry_points_policy in (
+                    f"ComputeRandomEntryPoints<{idx_t}>",
+                    f"MemcpyEntryPoints<{idx_t} COMMA {distance_t}>"):
+                f.write(
+                        f"instantiate_kernel_selection(\n  {data_t}, {idx_t}, {distance_t}, {sample_filter}, {entry_points_policy});\n"
+                )
 
         f.write(trailer)
         # For pasting into CMakeLists.txt

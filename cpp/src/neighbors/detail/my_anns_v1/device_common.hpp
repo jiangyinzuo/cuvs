@@ -209,6 +209,7 @@ RAFT_DEVICE_INLINE_FUNCTION void compute_distance_to_random_nodes(
 template <typename IndexT,
           typename DistanceT,
           typename DATASET_DESCRIPTOR_T,
+          typename HashtableAdditionalCondition,
           int STATIC_RESULT_POSITION = 1>
 RAFT_DEVICE_INLINE_FUNCTION void compute_distance_to_child_nodes(
   IndexT* __restrict__ result_child_indices_ptr,
@@ -226,6 +227,7 @@ RAFT_DEVICE_INLINE_FUNCTION void compute_distance_to_child_nodes(
   const IndexT* __restrict__ parent_indices,
   const IndexT* __restrict__ internal_topk_list,
   const uint32_t search_width,
+  const HashtableAdditionalCondition &hashtable_additional_condition,
   int* __restrict__ result_position = nullptr,
   const int max_result_position     = 0
 #ifdef _GRAPH_QUALITY_ANALYSIS
@@ -254,7 +256,7 @@ RAFT_DEVICE_INLINE_FUNCTION void compute_distance_to_child_nodes(
       child_id             = knn_graph[(i % knn_k) + (static_cast<int64_t>(knn_k) * parent_id)];
     }
     if (child_id != invalid_index) {
-      if (hashmap::insert(visited_hashmap_ptr, visited_hash_bitlen, child_id) == 0) {
+      if (hashtable_additional_condition.must_visited(child_id) || hashmap::insert(visited_hashmap_ptr, visited_hash_bitlen, child_id) == 0) {
         // Deactivate this entry as insertion into visited hash table has failed.
         child_id = invalid_index;
       } else if ((traversed_hashmap_ptr != nullptr) &&

@@ -771,6 +771,7 @@ struct search : search_plan_impl<DataT, IndexT, DistanceT, SAMPLE_FILTER_T> {
   }
 
   void operator()(raft::resources const& res,
+                  const index<DATA_T, INDEX_T>& index,
                   raft::device_matrix_view<const INDEX_T, int64_t, raft::row_major> graph,
                   INDEX_T* const topk_indices_ptr,       // [num_queries, topk]
                   DISTANCE_T* const topk_distances_ptr,  // [num_queries, topk]
@@ -779,7 +780,7 @@ struct search : search_plan_impl<DataT, IndexT, DistanceT, SAMPLE_FILTER_T> {
                   const INDEX_T* dev_seed_ptr,              // [num_queries, num_seeds]
                   uint32_t* const num_executed_iterations,  // [num_queries,]
                   uint32_t topk,
-                  SAMPLE_FILTER_T sample_filter)
+                  SAMPLE_FILTER_T sample_filter) override
   {
     // Init hashmap
     cudaStream_t stream      = raft::resource::get_cuda_stream(res);
