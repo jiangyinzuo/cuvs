@@ -44,6 +44,13 @@ extern template class cuvs::bench::cuvs_cagra<half, uint32_t>;
 extern template class cuvs::bench::cuvs_cagra<uint8_t, uint32_t>;
 extern template class cuvs::bench::cuvs_cagra<int8_t, uint32_t>;
 #endif
+#ifdef CUVS_ANN_BENCH_USE_CUVS_MY_ANNS_V1
+#include "cuvs_my_anns_v1_wrapper.h"
+extern template class cuvs::bench::cuvs_my_anns_v1<float, uint32_t>;
+extern template class cuvs::bench::cuvs_my_anns_v1<half, uint32_t>;
+extern template class cuvs::bench::cuvs_my_anns_v1<uint8_t, uint32_t>;
+extern template class cuvs::bench::cuvs_my_anns_v1<int8_t, uint32_t>;
+#endif
 
 #ifdef CUVS_ANN_BENCH_USE_CUVS_MG
 #include "cuvs_ivf_flat_wrapper.h"
@@ -164,6 +171,20 @@ void parse_search_param(const nlohmann::json& conf,
 }
 #endif
 
+nlohmann::json collect_conf_with_prefix(const nlohmann::json& conf,
+                                        const std::string& prefix,
+                                        bool remove_prefix = true)
+{
+  nlohmann::json out;
+  for (auto& i : conf.items()) {
+    if (i.key().compare(0, prefix.size(), prefix) == 0) {
+      auto new_key = remove_prefix ? i.key().substr(prefix.size()) : i.key();
+      out[new_key] = i.value();
+    }
+  }
+  return out;
+}
+
 #if defined(CUVS_ANN_BENCH_USE_CUVS_CAGRA) || defined(CUVS_ANN_BENCH_USE_CUVS_CAGRA_HNSWLIB) || \
   defined(CUVS_ANN_BENCH_USE_CUVS_MG)
 template <typename T, typename IdxT>
@@ -193,20 +214,6 @@ inline void parse_build_param(const nlohmann::json& conf, cuvs::neighbors::vpq_p
   if (conf.contains("pq_kmeans_trainset_fraction")) {
     param.pq_kmeans_trainset_fraction = conf.at("pq_kmeans_trainset_fraction");
   }
-}
-
-nlohmann::json collect_conf_with_prefix(const nlohmann::json& conf,
-                                        const std::string& prefix,
-                                        bool remove_prefix = true)
-{
-  nlohmann::json out;
-  for (auto& i : conf.items()) {
-    if (i.key().compare(0, prefix.size(), prefix) == 0) {
-      auto new_key = remove_prefix ? i.key().substr(prefix.size()) : i.key();
-      out[new_key] = i.value();
-    }
-  }
-  return out;
 }
 
 template <typename T, typename IdxT>
@@ -317,5 +324,113 @@ void parse_search_param(const nlohmann::json& conf,
 
   // enable dynamic batching
   parse_dynamic_batching_params(conf, param);
+}
+#endif
+
+#if defined(CUVS_ANN_BENCH_USE_CUVS_MY_ANNS_V1)
+cuvs::bench::AllocatorType parse_allocator(std::string mem_type)
+{
+  if (mem_type == "device") {
+    return cuvs::bench::AllocatorType::kDevice;
+  } else if (mem_type == "host_pinned") {
+    return cuvs::bench::AllocatorType::kHostPinned;
+  } else if (mem_type == "host_huge_page") {
+    return cuvs::bench::AllocatorType::kHostHugePage;
+  }
+  THROW(
+    "Invalid value for memory type %s, must be one of [\"device\", \"host_pinned\", "
+    "\"host_huge_page\"",
+    mem_type.c_str());
+}
+template <typename T, typename IdxT>
+void parse_search_param(const nlohmann::json& conf,
+                        typename cuvs::bench::cuvs_my_anns_v1<T, IdxT>::search_param& param)
+{
+  if (conf.contains("itopk")) { param.p.itopk_size = conf.at("itopk"); }
+  if (conf.contains("search_width")) { param.p.search_width = conf.at("search_width"); }
+  if (conf.contains("max_iterations")) { param.p.max_iterations = conf.at("max_iterations"); }
+  if (conf.contains("persistent")) { param.p.persistent = conf.at("persistent"); }
+  if (conf.contains("persistent_lifetime")) {
+    param.p.persistent_lifetime = conf.at("persistent_lifetime");
+  }
+  if (conf.contains("persistent_device_usage")) {
+    param.p.persistent_device_usage = conf.at("persistent_device_usage");
+  }
+  if (conf.contains("thread_block_size")) {
+    param.p.thread_block_size = conf.at("thread_block_size");
+  }
+  if (conf.contains("algo")) {
+    if (conf.at("algo") == "single_cta") {
+      param.p.algo = cuvs::neighbors::my_anns_v1::search_algo::SINGLE_CTA;
+    } else if (conf.at("algo") == "multi_cta") {
+      param.p.algo = cuvs::neighbors::my_anns_v1::search_algo::MULTI_CTA;
+    } else if (conf.at("algo") == "multi_kernel") {
+      param.p.algo = cuvs::neighbors::my_anns_v1::search_algo::MULTI_KERNEL;
+    } else if (conf.at("algo") == "auto") {
+      param.p.algo = cuvs::neighbors::my_anns_v1::search_algo::AUTO;
+    } else {
+      std::string tmp = conf.at("algo");
+      THROW("Invalid value for algo: %s", tmp.c_str());
+    }
+  }
+  if (conf.contains("graph_memory_type")) {
+    param.graph_mem = parse_allocator(conf.at("graph_memory_type"));
+  }
+  if (conf.contains("internal_dataset_memory_type")) {
+    param.dataset_mem = parse_allocator(conf.at("internal_dataset_memory_type"));
+  }
+  // Same ratio as in IVF-PQ
+  param.refine_ratio = conf.value("refine_ratio", 1.0f);
+  param.num_entry_points = conf.value("num_entry_points", 512);
+
+  // enable dynamic batching
+  parse_dynamic_batching_params(conf, param);
+}
+
+template <typename T, typename IdxT>
+void parse_build_param(const nlohmann::json& conf, cuvs::neighbors::nn_descent::index_params& param)
+{
+  if (conf.contains("graph_degree")) { param.graph_degree = conf.at("graph_degree"); }
+  if (conf.contains("intermediate_graph_degree")) {
+    param.intermediate_graph_degree = conf.at("intermediate_graph_degree");
+  }
+  // we allow niter shorthand for max_iterations
+  if (conf.contains("niter")) { param.max_iterations = conf.at("niter"); }
+  if (conf.contains("max_iterations")) { param.max_iterations = conf.at("max_iterations"); }
+  if (conf.contains("termination_threshold")) {
+    param.termination_threshold = conf.at("termination_threshold");
+  }
+}
+
+template <typename T, typename IdxT>
+void parse_build_param(const nlohmann::json& conf,
+                       typename cuvs::bench::cuvs_my_anns_v1<T, IdxT>::build_param& param)
+{
+  if (conf.contains("graph_degree")) {
+    param.my_anns_v1_params.graph_degree              = conf.at("graph_degree");
+    param.my_anns_v1_params.intermediate_graph_degree = param.my_anns_v1_params.graph_degree * 2;
+  }
+  if (conf.contains("intermediate_graph_degree")) {
+    param.my_anns_v1_params.intermediate_graph_degree = conf.at("intermediate_graph_degree");
+  }
+  if (conf.contains("graph_build_algo")) {
+    if (conf.at("graph_build_algo") == "IVF_PQ") {
+      param.algo = cuvs::bench::MyAnnsV1BuildAlgo::kIvfPq;
+    } else if (conf.at("graph_build_algo") == "NN_DESCENT") {
+      param.algo = cuvs::bench::MyAnnsV1BuildAlgo::kNnDescent;
+    } else {
+      param.algo = cuvs::bench::MyAnnsV1BuildAlgo::kAuto;
+    }
+  }
+  nlohmann::json nn_descent_conf = collect_conf_with_prefix(conf, "nn_descent_");
+  if (!nn_descent_conf.empty()) {
+    cuvs::neighbors::nn_descent::index_params nn_param;
+    nn_param.intermediate_graph_degree = 1.5 * param.my_anns_v1_params.intermediate_graph_degree;
+    parse_build_param<T, IdxT>(nn_descent_conf, nn_param);
+    if (nn_param.graph_degree != param.my_anns_v1_params.intermediate_graph_degree) {
+      nn_param.graph_degree = param.my_anns_v1_params.intermediate_graph_degree;
+    }
+    param.nn_descent_params = nn_param;
+  }
 }
 #endif

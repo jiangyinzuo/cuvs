@@ -377,12 +377,6 @@ if(BUILD_SHARED_LIBS)
   file(GLOB_RECURSE compute_distance_sources "src/neighbors/detail/my_anns_v1/compute_distance_*.cu")
   set_source_files_properties(${compute_distance_sources} PROPERTIES COMPILE_FLAGS -maxrregcount=64)
   # maxrregcount=64 compile error in debug mode
-  # set_source_files_properties(${compute_distance_sources}
-  #       src/neighbors/my_anns_v1_search_float.cu
-  #       src/neighbors/my_anns_v1_search_half.cu
-  #       src/neighbors/my_anns_v1_search_int8.cu
-  #       src/neighbors/my_anns_v1_search_uint8.cu
-  #     PROPERTIES COMPILE_OPTIONS "-O0;-g;-G;-maxrregcount=255")
 
   set_target_properties(
     cuvs-my-anns-v1-search
@@ -399,11 +393,19 @@ if(BUILD_SHARED_LIBS)
   target_include_directories(
     cuvs-my-anns-v1-search PRIVATE "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
   )
+  if(CMAKE_BUILD_TYPE MATCHES Debug)
+      target_compile_options(
+        cuvs-my-anns-v1-search PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:${CUVS_CXX_FLAGS}>"
+                                  "$<$<COMPILE_LANGUAGE:CUDA>:${CUVS_CUDA_FLAGS}>"
+                                  "-O0;-g;-G"
+      )
+  else()
   target_compile_options(
     cuvs-my-anns-v1-search PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:${CUVS_CXX_FLAGS}>"
                               "$<$<COMPILE_LANGUAGE:CUDA>:${CUVS_CUDA_FLAGS}>"
                               # "-O0;-g;-G"
   )
+  endif()
 
   if(BUILD_MG_ALGOS)
     set(CUVS_MG_ALGOS

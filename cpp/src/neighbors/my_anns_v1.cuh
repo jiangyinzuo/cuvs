@@ -17,10 +17,10 @@
 #pragma once
 
 #include "detail/my_anns_v1/add_nodes.cuh"
+#include "detail/my_anns_v1/graph_core.cuh"
 #include "detail/my_anns_v1/my_anns_v1_build.cuh"
 #include "detail/my_anns_v1/my_anns_v1_merge.cuh"
 #include "detail/my_anns_v1/my_anns_v1_search.cuh"
-#include "detail/my_anns_v1/graph_core.cuh"
 
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/host_device_accessor.hpp>
@@ -34,7 +34,41 @@
 
 #include <rmm/cuda_stream_view.hpp>
 
+#include <raft/linalg/gemm.cuh>  // raft::linalg::gemm
+#include <raft/linalg/norm.cuh>  // raft::linalg::norm
+
 namespace cuvs::neighbors::my_anns_v1 {
+
+template <typename T, typename IdxT>
+void index<T, IdxT>::precompute_dataset_norms(raft::resources const& res)
+{
+  // Precompute the centers vector norms for L2Expanded distance
+  auto stream       = raft::resource::get_cuda_stream(res);
+  auto dataset_view = dataset();
+  auto n_rows       = dataset_view.extent(0);
+  // padding elements are 0, it's ok to add them to the norm
+  auto columns = dataset_view.stride(0);
+  if (!dataset_norms_.has_value()) { allocate_dataset_norms(res); }
+  if (metric() == cuvs::distance::DistanceType::CosineExpanded) {
+    raft::linalg::rowNorm(dataset_norms_->data_handle(),
+                          dataset_view.data_handle(),
+                          columns,
+                          n_rows,
+                          raft::linalg::L2Norm,
+                          true,
+                          stream,
+                          raft::sqrt_op{});
+  } else {
+    raft::linalg::rowNorm(dataset_norms_->data_handle(),
+                          dataset_view.data_handle(),
+                          columns,
+                          n_rows,
+                          raft::linalg::L2Norm,
+                          true,
+                          stream);
+  }
+  RAFT_LOG_TRACE_VEC(idx.query_norms_->data_handle(), std::min<uint32_t>(dim, 20));
+}
 
 /**
  * @defgroup my_anns_v1 CUDA ANN Graph-based nearest neighbor search
@@ -97,11 +131,11 @@ void build_knn_graph(
       dataset.data_handle(), dataset.extent(0), dataset.extent(1));
 
   my_anns_v1::detail::build_knn_graph(res,
-                                 dataset_internal,
-                                 knn_graph_internal,
-                                 ivf_pq_params.refinement_rate,
-                                 ivf_pq_params.build_params,
-                                 ivf_pq_params.search_params);
+                                      dataset_internal,
+                                      knn_graph_internal,
+                                      ivf_pq_params.refinement_rate,
+                                      ivf_pq_params.build_params,
+                                      ivf_pq_params.search_params);
 }
 
 /**
@@ -161,8 +195,8 @@ void build_knn_graph(
  * @brief Sort a KNN graph index.
  * Preprocessing step for `my_anns_v1::optimize`: If a KNN graph is not built using
  * `my_anns_v1::build_knn_graph`, then it is necessary to call this function before calling
- * `my_anns_v1::optimize`. If the graph is built by `my_anns_v1::build_knn_graph`, it is already sorted and
- * you do not need to call this function.
+ * `my_anns_v1::optimize`. If the graph is built by `my_anns_v1::build_knn_graph`, it is already
+ * sorted and you do not need to call this function.
  *
  * Usage example:
  * @code{.cpp}

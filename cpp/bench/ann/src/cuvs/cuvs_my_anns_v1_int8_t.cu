@@ -13,19 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#include "cuvs_my_anns_v1_wrapper.h"
 
-#include <cstdint>
-#include <vector_types.h>
-
-namespace cuvs::neighbors::experimental::hnsw_gpu::detail {
-namespace device {
-
-// warpSize for compile time calculation
-constexpr unsigned warp_size = 32;
-
-// using LOAD_256BIT_T = ulonglong4;
-using LOAD_128BIT_T = uint4;
-using LOAD_64BIT_T  = uint64_t;
-
-}  // namespace device
-}  // namespace cuvs::neighbors::experimental::hnsw_gpu::detail
+namespace cuvs::bench {
+template class cuvs_my_anns_v1<int8_t, uint32_t>;
+}  // namespace cuvs::bench

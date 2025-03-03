@@ -228,6 +228,30 @@ static __global__ void outer_add_kernel(const T* a, IdxT len_a, const T* b, IdxT
   c[gid] = (a == nullptr ? T(0) : a[i]) + (b == nullptr ? T(0) : b[j]);
 }
 
+template <typename IdxT>
+static __global__ void outer_add_kernel(const half* a, IdxT len_a, const half* b, IdxT len_b, float* c)
+{
+  IdxT gid = threadIdx.x + blockDim.x * static_cast<IdxT>(blockIdx.x);
+  IdxT i   = gid / len_b;
+  IdxT j   = gid % len_b;
+  if (i >= len_a) return;
+  float a_i = a == nullptr ? (float)(0) : __half2float(a[i]);
+  float b_j = b == nullptr ? (float)(0) : __half2float(b[j]);
+  c[gid] = a_i + b_j;
+}
+
+template <typename IdxT>
+static __global__ void outer_add_kernel(const float* a, IdxT len_a, const half* b, IdxT len_b, float* c)
+{
+  IdxT gid = threadIdx.x + blockDim.x * static_cast<IdxT>(blockIdx.x);
+  IdxT i   = gid / len_b;
+  IdxT j   = gid % len_b;
+  if (i >= len_a) return;
+  float a_i = a == nullptr ? (float)(0) : a[i];
+  float b_j = b == nullptr ? (float)(0) : __half2float(b[j]);
+  c[gid] = a_i + b_j;
+}
+
 template <typename T, typename IdxT>
 static __global__ void block_copy_kernel(const IdxT* in_offsets,
                                          const IdxT* out_offsets,
@@ -305,6 +329,22 @@ void block_copy(const IdxT* in_offsets,
  */
 template <typename T, typename IdxT>
 void outer_add(const T* a, IdxT len_a, const T* b, IdxT len_b, T* c, rmm::cuda_stream_view stream)
+{
+  dim3 threads(128, 1, 1);
+  dim3 blocks(raft::ceildiv<IdxT>(len_a * len_b, threads.x), 1, 1);
+  outer_add_kernel<<<blocks, threads, 0, stream>>>(a, len_a, b, len_b, c);
+}
+
+template <typename IdxT>
+void outer_add(const half* a, IdxT len_a, const half* b, IdxT len_b, float* c, rmm::cuda_stream_view stream)
+{
+  dim3 threads(128, 1, 1);
+  dim3 blocks(raft::ceildiv<IdxT>(len_a * len_b, threads.x), 1, 1);
+  outer_add_kernel<<<blocks, threads, 0, stream>>>(a, len_a, b, len_b, c);
+}
+
+template <typename IdxT>
+void outer_add(const float* a, IdxT len_a, const half* b, IdxT len_b, float* c, rmm::cuda_stream_view stream)
 {
   dim3 threads(128, 1, 1);
   dim3 blocks(raft::ceildiv<IdxT>(len_a * len_b, threads.x), 1, 1);

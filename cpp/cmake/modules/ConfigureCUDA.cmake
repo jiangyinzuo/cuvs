@@ -63,6 +63,9 @@ endif()
 # Debug options
 if(CMAKE_BUILD_TYPE MATCHES Debug)
   message(VERBOSE "cuVS: Building with debugging flags")
-  list(APPEND CUVS_CUDA_FLAGS -G -Xcompiler=-rdynamic)
+  # FIXME(jiangyinzuo): report error: Unresolved extern function 'cudaStreamDestroy' in
+  # neighbors/detail/dynamic_batching.cuh
+  list(APPEND CUVS_CUDA_FLAGS -Xcompiler=-rdynamic)
+  # list(APPEND CUVS_CUDA_FLAGS -G -Xcompiler=-rdynamic)
   list(APPEND CUVS_CUDA_FLAGS -Xptxas --suppress-stack-size-warning)
 endif()

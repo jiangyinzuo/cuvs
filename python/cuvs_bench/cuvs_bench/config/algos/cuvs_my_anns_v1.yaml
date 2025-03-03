@@ -1,7 +1,7 @@
-name: cuvs_cagra
+name: cuvs_my_anns_v1
 constraints:
-  build: cuvs_bench.config.algos.constraints.cuvs_cagra_build
-  search: cuvs_bench.config.algos.constraints.cuvs_cagra_search
+  build: cuvs_bench.config.algos.constraints.cuvs_my_anns_v1_build
+  search: cuvs_bench.config.algos.constraints.cuvs_my_anns_v1_search
 groups:
   base:
     build:
@@ -10,8 +10,19 @@ groups:
       graph_build_algo: ["NN_DESCENT"]
     search:
       # must be multiple of 32
-      itopk: [16, 32, 64, 128, 256, 512]
-      search_width: [1, 2, 4, 8, 16, 32, 64]
+      itopk: [32, 64, 128, 256, 512]
+      search_width: [1, 2, 4]
+      num_entry_points: [0, 32, 64, 128, 256, 512, 1024, 4096, 8192, 16384]
+  experimental_1:
+    build:
+      graph_degree: [16, 32, 48, 64, 96, 128]
+      intermediate_graph_degree: [16, 32, 48, 64, 96, 128]
+      graph_build_algo: ["NN_DESCENT"]
+    search:
+      # must be multiple of 32
+      itopk: [32, 64, 128, 256, 512]
+      search_width: [1]
+      num_entry_points: [0, 16384]
   test:
     build:
       graph_degree: [32]

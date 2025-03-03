@@ -109,6 +109,13 @@ auto create_algo(const std::string& algo_name,
     a = std::make_unique<cuvs::bench::cuvs_cagra<T, uint32_t>>(metric, dim, param);
   }
 #endif
+#ifdef CUVS_ANN_BENCH_USE_CUVS_MY_ANNS_V1
+  if (algo_name == "cuvs_my_anns_v1") {
+    typename cuvs::bench::cuvs_my_anns_v1<T, uint32_t>::build_param param;
+    parse_build_param<T, uint32_t>(conf, param);
+    a = std::make_unique<cuvs::bench::cuvs_my_anns_v1<T, uint32_t>>(metric, dim, param);
+  }
+#endif
 #ifdef CUVS_ANN_BENCH_USE_CUVS_MG
   if constexpr (std::is_same_v<T, float> || std::is_same_v<T, uint8_t> ||
                 std::is_same_v<T, int8_t>) {
@@ -172,6 +179,13 @@ auto create_search_param(const std::string& algo_name, const nlohmann::json& con
 #ifdef CUVS_ANN_BENCH_USE_CUVS_CAGRA
   if (algo_name == "raft_cagra" || algo_name == "cuvs_cagra") {
     auto param = std::make_unique<typename cuvs::bench::cuvs_cagra<T, uint32_t>::search_param>();
+    parse_search_param<T, uint32_t>(conf, *param);
+    return param;
+  }
+#endif
+#ifdef CUVS_ANN_BENCH_USE_CUVS_MY_ANNS_V1
+  if (algo_name == "cuvs_my_anns_v1") {
+    auto param = std::make_unique<typename cuvs::bench::cuvs_my_anns_v1<T, uint32_t>::search_param>();
     parse_search_param<T, uint32_t>(conf, *param);
     return param;
   }

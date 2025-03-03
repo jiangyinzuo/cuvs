@@ -183,6 +183,7 @@ struct search_plan_impl : public search_plan_impl_base {
   virtual ~search_plan_impl() {}
 
   virtual void operator()(raft::resources const& res,
+                          const index<DATA_T, INDEX_T>& index, // used for entry points GEMM distance computation
                           raft::device_matrix_view<const INDEX_T, int64_t, raft::row_major> graph,
                           INDEX_T* const result_indices_ptr,       // [num_queries, topk]
                           DISTANCE_T* const result_distances_ptr,  // [num_queries, topk]
@@ -202,10 +203,10 @@ struct search_plan_impl : public search_plan_impl_base {
         constexpr uint32_t mc_search_width = 1;
         _max_iterations                    = mc_itopk_size / mc_search_width;
       } else {
-        _max_iterations = itopk_size / search_width;
+        _max_iterations = max(itopk_size / search_width - 1, (uint64_t)0);
       }
       int64_t num_reachable_nodes = 1;
-      while (num_reachable_nodes < dataset_size) {
+      while (num_reachable_nodes + (int64_t)num_entry_points < dataset_size) {
         num_reachable_nodes *= max((int64_t)2, graph_degree / 2);
         _max_iterations += 1;
       }

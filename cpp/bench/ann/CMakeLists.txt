@@ -29,6 +29,7 @@ option(CUVS_ANN_BENCH_USE_FAISS_CPU_IVF_PQ "Include faiss' cpu ivf pq algorithm 
 option(CUVS_ANN_BENCH_USE_CUVS_IVF_FLAT "Include cuVS ivf flat algorithm in benchmark" ON)
 option(CUVS_ANN_BENCH_USE_CUVS_IVF_PQ "Include cuVS ivf pq algorithm in benchmark" ON)
 option(CUVS_ANN_BENCH_USE_CUVS_CAGRA "Include cuVS CAGRA in benchmark" ON)
+option(CUVS_ANN_BENCH_USE_CUVS_MY_ANNS_V1 "Include cuVS my_anns_v1 in benchmark" ON)
 option(CUVS_ANN_BENCH_USE_CUVS_BRUTE_FORCE "Include cuVS brute force knn in benchmark" ON)
 option(CUVS_ANN_BENCH_USE_CUVS_CAGRA_HNSWLIB "Include cuVS CAGRA with HNSW search in benchmark" ON)
 option(CUVS_ANN_BENCH_USE_HNSWLIB "Include hnsw algorithm in benchmark" ON)
@@ -62,6 +63,7 @@ if(BUILD_CPU_ONLY)
   set(CUVS_ANN_BENCH_USE_CUVS_IVF_FLAT OFF)
   set(CUVS_ANN_BENCH_USE_CUVS_IVF_PQ OFF)
   set(CUVS_ANN_BENCH_USE_CUVS_CAGRA OFF)
+  set(CUVS_ANN_BENCH_USE_CUVS_MY_ANNS_V1 OFF)
   set(CUVS_ANN_BENCH_USE_CUVS_BRUTE_FORCE OFF)
   set(CUVS_ANN_BENCH_USE_CUVS_CAGRA_HNSWLIB OFF)
   set(CUVS_ANN_BENCH_USE_GGNN OFF)
@@ -80,6 +82,7 @@ if(CUVS_ANN_BENCH_USE_CUVS_IVF_PQ
    OR CUVS_ANN_BENCH_USE_CUVS_BRUTE_FORCE
    OR CUVS_ANN_BENCH_USE_CUVS_IVF_FLAT
    OR CUVS_ANN_BENCH_USE_CUVS_CAGRA
+   OR CUVS_ANN_BENCH_USE_CUVS_MY_ANNS_V1
    OR CUVS_ANN_BENCH_USE_CUVS_CAGRA_HNSWLIB
    OR CUVS_KNN_BENCH_USE_CUVS_BRUTE_FORCE
    OR CUVS_ANN_BENCH_USE_CUVS_MG
@@ -266,6 +269,21 @@ if(CUVS_ANN_BENCH_USE_CUVS_CAGRA_HNSWLIB)
   ConfigureAnnBench(NAME CUVS_CAGRA_HNSWLIB PATH src/cuvs/cuvs_cagra_hnswlib.cu LINKS cuvs)
 endif()
 
+if(CUVS_ANN_BENCH_USE_CUVS_MY_ANNS_V1)
+  ConfigureAnnBench(
+    NAME
+    CUVS_MY_ANNS_V1
+    PATH
+    src/cuvs/cuvs_benchmark.cu
+    src/cuvs/cuvs_my_anns_v1_float.cu
+    src/cuvs/cuvs_my_anns_v1_half.cu
+    src/cuvs/cuvs_my_anns_v1_int8_t.cu
+    src/cuvs/cuvs_my_anns_v1_uint8_t.cu
+    LINKS
+    cuvs
+  )
+endif()
+
 if(CUVS_ANN_BENCH_USE_CUVS_MG)
   ConfigureAnnBench(
     NAME
@@ -357,7 +375,7 @@ endif()
 if(CUVS_ANN_BENCH_USE_CUHNSW)
   include(cmake/thirdparty/get_json11)
   find_package(spdlog REQUIRED)
-  set_source_files_properties(src/cuhnsw/cuhnsw_benchmark.cu PROPERTIES COMPILE_OPTIONS "-O0;-g;-G")
+  # set_source_files_properties(src/cuhnsw/cuhnsw_benchmark.cu PROPERTIES COMPILE_OPTIONS "-O0;-g;-G")
   ConfigureAnnBench(
     NAME CUHNSW
     PATH

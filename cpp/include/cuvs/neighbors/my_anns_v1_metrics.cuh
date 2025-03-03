@@ -19,6 +19,7 @@ struct MyAnnsV1Metrics {
   std::uint64_t clk_restore_hash;
   std::uint64_t counter_restore_hash;
   std::uint64_t clk_insert_hashmap;
+  std::uint64_t clk_load_gmem_graph;
   std::uint64_t counter_insert_hashmap;
   std::uint64_t clk_compute_distance;
   std::uint64_t clk_final;
@@ -46,6 +47,7 @@ struct MyAnnsV1Metrics {
     clk_restore_hash          = 0;
     counter_restore_hash      = 0;
     clk_insert_hashmap        = 0;
+    clk_load_gmem_graph       = 0;
     counter_insert_hashmap    = 0;
     clk_compute_distance      = 0;
     clk_final                 = 0;
@@ -105,6 +107,7 @@ struct MyAnnsV1MetricsAccumulator {
     metrics.clk_restore_hash += m.clk_restore_hash;
     metrics.counter_restore_hash += m.counter_restore_hash;
     metrics.clk_insert_hashmap += m.clk_insert_hashmap;
+    metrics.clk_load_gmem_graph += m.clk_load_gmem_graph;
     metrics.counter_insert_hashmap += m.counter_insert_hashmap;
     metrics.clk_compute_distance += m.clk_compute_distance;
     metrics.clk_final += m.clk_final;
@@ -147,6 +150,7 @@ struct MyAnnsV1MetricsAccumulator {
     std::cout << "clk_restore_hash: " << metrics.clk_restore_hash << std::endl;
     std::cout << "counter_restore_hash: " << metrics.counter_restore_hash << std::endl;
     std::cout << "clk_insert_hashmap: " << metrics.clk_insert_hashmap << std::endl;
+    std::cout << "clk_load_gmem_graph: " << metrics.clk_load_gmem_graph << std::endl;
     std::cout << "counter_insert_hashmap: " << metrics.counter_insert_hashmap << std::endl;
     std::cout << "clk_compute_distance: " << metrics.clk_compute_distance << std::endl;
     std::cout << "clk_final: " << metrics.clk_final << std::endl;

@@ -36,6 +36,12 @@ def cuvs_cagra_build(params, dims):
     return True
 
 
+def cuvs_my_anns_v1_build(params, dims):
+    if "graph_degree" in params and "intermediate_graph_degree" in params:
+        return params["graph_degree"] <= params["intermediate_graph_degree"]
+    return True
+
+
 def cuvs_ivf_pq_build(params, dims):
     if "pq_dim" in params:
         return params["pq_dim"] <= dims
@@ -57,8 +63,17 @@ def cuvs_ivf_pq_search(params, build_params, k, batch_size):
 
 def cuvs_cagra_search(params, build_params, k, batch_size):
     if "itopk" in params:
-        return params["itopk"] >= k
+        return params["itopk"] >= k and params["itopk"] % 32 == 0
     return True
+
+
+def cuvs_my_anns_v1_search(params, build_params, k, batch_size):
+    result = True
+    if "itopk" in params:
+        result = result and params["itopk"] >= k and params["itopk"] % 32 == 0
+    if "num_entry_points" in params:
+        result = result and (params["num_entry_points"] == 0 or params["num_entry_points"] >= params["itopk"])
+    return result
 
 
 ###############################################################################

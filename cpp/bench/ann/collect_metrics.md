@@ -28,3 +28,13 @@ bench/ann/src/cuhnsw/include/cuhnsw_statistics.hpp:3
 ```cpp
 #define _CLK_BREAKDOWN
 ```
+
+# My ANNS V1
+
+cpp/src/neighbors/detail/my_anns_v1/graph_analysis_macros.h:1
+```cuda
+#pragma once
+// #define _GRAPH_QUALITY_ANALYSIS
+// #define _CLK_BREAKDOWN
+#define METRIC_THREAD_COND() ((threadIdx.x == 0) && (blockIdx.x == 0))
+```

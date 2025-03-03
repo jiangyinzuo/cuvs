@@ -209,6 +209,7 @@ RAFT_DEVICE_INLINE_FUNCTION void compute_distance_to_random_nodes(
 template <typename IndexT,
           typename DistanceT,
           typename DATASET_DESCRIPTOR_T,
+          typename HashtableAdditionalCondition,
           int STATIC_RESULT_POSITION = 1>
 RAFT_DEVICE_INLINE_FUNCTION void compute_distance_to_child_nodes(
   IndexT* __restrict__ result_child_indices_ptr,
@@ -223,9 +224,10 @@ RAFT_DEVICE_INLINE_FUNCTION void compute_distance_to_child_nodes(
   const uint32_t visited_hash_bitlen,
   IndexT* __restrict__ traversed_hashmap_ptr,
   const uint32_t traversed_hash_bitlen,
-  const IndexT* __restrict__ parent_indices,
+  const IndexT* __restrict__ parent_indices, // [search_width]
   const IndexT* __restrict__ internal_topk_list,
   const uint32_t search_width,
+  const HashtableAdditionalCondition &hashtable_additional_condition,
   int* __restrict__ result_position = nullptr,
   const int max_result_position     = 0
 #ifdef _GRAPH_QUALITY_ANALYSIS
@@ -242,19 +244,26 @@ RAFT_DEVICE_INLINE_FUNCTION void compute_distance_to_child_nodes(
 
 #ifdef _GRAPH_QUALITY_ANALYSIS
   uint64_t count_insert_hashmap = 0;
-  uint64_t clk_start            = clock64();
+  uint64_t clk_load_gmem_graph  = 0;
+  uint64_t clk_insert_hashmap   = 0;
 #endif
   // Read child indices of parents from knn graph and check if the distance
   // computaiton is necessary.
   for (uint32_t i = threadIdx.x; i < knn_k * search_width; i += blockDim.x) {
-    const IndexT smem_parent_id = parent_indices[i / knn_k];
-    IndexT child_id             = invalid_index;
+#ifdef _GRAPH_QUALITY_ANALYSIS
+    uint64_t clk_load_gmem_graph_start = clock64();
+    const IndexT smem_parent_id        = parent_indices[i / knn_k];
+    IndexT child_id                    = invalid_index;
     if (smem_parent_id != invalid_index) {
       const auto parent_id = internal_topk_list[smem_parent_id] & ~index_msb_1_mask;
       child_id             = knn_graph[(i % knn_k) + (static_cast<int64_t>(knn_k) * parent_id)];
     }
+    clk_load_gmem_graph += clock64() - clk_load_gmem_graph_start;
+    uint64_t clk_insert_hashmap_start = clock64();
+#endif
     if (child_id != invalid_index) {
-      if (hashmap::insert(visited_hashmap_ptr, visited_hash_bitlen, child_id) == 0) {
+      if (hashtable_additional_condition.must_visited(child_id) ||
+          hashmap::insert(visited_hashmap_ptr, visited_hash_bitlen, child_id) == 0) {
         // Deactivate this entry as insertion into visited hash table has failed.
         child_id = invalid_index;
       } else if ((traversed_hashmap_ptr != nullptr) &&
@@ -273,11 +282,14 @@ RAFT_DEVICE_INLINE_FUNCTION void compute_distance_to_child_nodes(
       int j                       = atomicSub(result_position, 1) - 1;
       result_child_indices_ptr[j] = child_id;
     }
+#ifdef _GRAPH_QUALITY_ANALYSIS
+    clk_insert_hashmap += clock64() - clk_insert_hashmap_start;
+#endif
   }
 #ifdef _GRAPH_QUALITY_ANALYSIS
-  uint64_t clk_insert_hashmap = clock64() - clk_start;
   if (METRIC_THREAD_COND()) {
     atomicAdd(&metrics->clk_insert_hashmap, clk_insert_hashmap);
+    atomicAsdd(&metric->clk_load_gmem_graph, clk_load_gmem_graph);
     atomicAdd(&metrics->counter_insert_hashmap, count_insert_hashmap);
   }
 #endif

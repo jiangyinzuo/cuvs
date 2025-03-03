@@ -27,8 +27,7 @@ namespace cuvs::neighbors::my_anns_v1 {
               raft::device_matrix_view<float, int64_t, raft::row_major> distances, \
               const cuvs::neighbors::filtering::base_filter& sample_filter)        \
   {                                                                                \
-    my_anns_v1::search<T, IdxT>(                                       \
-      handle, params, index, queries, neighbors, distances, sample_filter);        \
+    THROW("do not support int8_t");\
   }
 
 CUVS_INST_my_anns_v1_SEARCH(int8_t, uint32_t);

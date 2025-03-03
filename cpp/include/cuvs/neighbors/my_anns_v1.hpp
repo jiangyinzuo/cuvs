@@ -29,6 +29,7 @@
 #include <raft/core/resource/stream_view.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/util/integer_utils.hpp>
+#include <raft/linalg/detail/cublas_wrappers.hpp>
 #include <rmm/cuda_stream_view.hpp>
 
 #include <optional>
@@ -105,7 +106,7 @@ struct index_params : cuvs::neighbors::index_params {
    * params.graph_build_params =
    * my_anns_v1::graph_build_params::nn_descent_params(params.intermediate_graph_degree);
    *
-   * // 3. Choose iterative graph building using my_anns_v1's search() and optimize()  [Experimental]
+   * // 3. Choose iterative graph building using my_anns_v1's search() and optimize() [Experimental]
    * params.graph_build_params =
    * my_anns_v1::graph_build_params::iterative_search_params();
    * @endcode
@@ -173,6 +174,13 @@ enum class search_algo {
 enum class hash_mode { HASH, SMALL, AUTO };
 
 struct search_params : cuvs::neighbors::search_params {
+  /**
+   * Number of entry points. Entry points distances will be computed using GEMM.
+   *
+   * Disable by setting to 0.
+   */
+  size_t num_entry_points = 4096;
+
   /** Maximum number of queries to search at the same time (batch size). Auto select when 0.*/
   size_t max_queries = 0;
 
@@ -401,6 +409,10 @@ struct index : cuvs::neighbors::index {
       graph_(raft::make_device_matrix<IdxT, int64_t>(res, 0, 0)),
       dataset_(new cuvs::neighbors::empty_dataset<int64_t>(0))
   {
+    if (metric != cuvs::distance::DistanceType::L2Expanded) {
+      RAFT_LOG_ERROR("my_anns_v1 index currently supports only L2Expanded distance metric. ");
+    }
+    init_cublas_handle();
   }
 
   /** Construct an index from dataset and knn_graph arrays
@@ -472,7 +484,17 @@ struct index : cuvs::neighbors::index {
     update_graph(res, knn_graph);
 
     raft::resource::sync_stream(res);
+    init_cublas_handle();
   }
+
+  void init_cublas_handle() {
+    if (cublas_handle_ == nullptr) {
+      RAFT_CUBLAS_TRY(cublasCreate(&cublas_handle_));
+      RAFT_CUBLAS_TRY(cublasSetMathMode(cublas_handle_, CUBLAS_TF32_TENSOR_OP_MATH));
+    }
+  }
+
+  cublasHandle_t cublas_handle() const { return cublas_handle_; }
 
   /**
    * Replace the dataset with a new dataset.
@@ -559,11 +581,52 @@ struct index : cuvs::neighbors::index {
     graph_view_ = graph_.view();
   }
 
+  raft::device_matrix_view<const T, uint32_t, raft::layout_stride> entry_points(
+    uint32_t num_entry_points) const noexcept
+  {
+    auto dataset_view = dataset();
+    auto d = dataset_->dim();
+    return raft::make_device_strided_matrix_view<const T, uint32_t>(dataset_view.data_handle(), num_entry_points, d, d);
+  }
+
+  void precompute_dataset_norms(raft::resources const& res);
+
+  void allocate_dataset_norms(raft::resources const& res)
+  {
+    auto aligned_dataset_view = dataset();
+    switch (metric_) {
+      case cuvs::distance::DistanceType::L2Expanded:
+      case cuvs::distance::DistanceType::L2SqrtExpanded:
+      case cuvs::distance::DistanceType::L2Unexpanded:
+      case cuvs::distance::DistanceType::L2SqrtUnexpanded:
+      case cuvs::distance::DistanceType::CosineExpanded:
+        dataset_norms_ =
+          raft::make_device_vector<T, uint32_t>(res, aligned_dataset_view.extent(0));
+        break;
+      default: dataset_norms_ = std::nullopt;
+    }
+  }
+
+  /**
+   * (Optional) Precomputed norms of the `query norms`.
+   */
+  std::optional<raft::device_vector_view<const T, uint32_t>> dataset_norms() const noexcept
+  {
+    if (dataset_norms_.has_value()) {
+      return std::make_optional<raft::device_vector_view<const T, uint32_t>>(dataset_norms_->view());
+    } else {
+      return std::nullopt;
+    }
+  }
+
  private:
   cuvs::distance::DistanceType metric_;
   raft::device_matrix<IdxT, int64_t, raft::row_major> graph_;
   raft::device_matrix_view<const IdxT, int64_t, raft::row_major> graph_view_;
   std::unique_ptr<neighbors::dataset<dataset_index_type>> dataset_;
+
+  std::optional<raft::device_vector<T, uint32_t>> dataset_norms_;
+  cublasHandle_t cublas_handle_ = nullptr;
 };
 /**
  * @}

@@ -47,6 +47,7 @@ namespace cuvs::neighbors::my_anns_v1::detail {
 template <typename DataT, typename IndexT, typename DistanceT, typename my_anns_v1SampleFilterT>
 void search_main_core(raft::resources const& res,
                       search_params params,
+                      const index<DataT, IndexT>& index, // used for entry points GEMM distance computation
                       const dataset_descriptor_host<DataT, IndexT, DistanceT>& dataset_desc,
                       raft::device_matrix_view<const IndexT, int64_t, raft::row_major> graph,
                       raft::device_matrix_view<const DataT, int64_t, raft::row_major> queries,
@@ -73,7 +74,8 @@ void search_main_core(raft::resources const& res,
     topk,
     queries.extent(1));
 
-  using my_anns_v1SampleFilterT_s = typename my_anns_v1SampleFilterT_Selector<my_anns_v1SampleFilterT>::type;
+  using my_anns_v1SampleFilterT_s =
+    typename my_anns_v1SampleFilterT_Selector<my_anns_v1SampleFilterT>::type;
   std::unique_ptr<search_plan_impl<DataT, IndexT, DistanceT, my_anns_v1SampleFilterT_s>> plan =
     factory<DataT, IndexT, DistanceT, my_anns_v1SampleFilterT_s>::create(
       res, params, dataset_desc, queries.extent(1), graph.extent(0), graph.extent(1), topk);
@@ -101,6 +103,7 @@ void search_main_core(raft::resources const& res,
     uint32_t* _num_executed_iterations = nullptr;
 #endif
     (*plan)(res,
+            index,
             graph,
             _topk_indices_ptr,
             _topk_distances_ptr,
@@ -145,7 +148,7 @@ void search_main(raft::resources const& res,
                  raft::device_matrix_view<DistanceT, int64_t, raft::row_major> distances,
                  my_anns_v1SampleFilterT sample_filter = my_anns_v1SampleFilterT())
 {
-  auto stream         = raft::resource::get_cuda_stream(res);
+  // auto stream         = raft::resource::get_cuda_stream(res);
   const auto& graph   = index.graph();
   auto graph_internal = raft::make_device_matrix_view<const InternalIdxT, int64_t, raft::row_major>(
     reinterpret_cast<const InternalIdxT*>(graph.data_handle()), graph.extent(0), graph.extent(1));
@@ -159,17 +162,20 @@ void search_main(raft::resources const& res,
     auto desc = dataset_descriptor_init_with_cache<T, InternalIdxT, DistanceT>(
       res, params, *strided_dset, index.metric());
     search_main_core<T, InternalIdxT, DistanceT, my_anns_v1SampleFilterT>(
-      res, params, desc, graph_internal, queries, neighbors, distances, sample_filter);
+      res, params, index, desc, graph_internal, queries, neighbors, distances, sample_filter);
   } else if (auto* vpq_dset = dynamic_cast<const vpq_dataset<float, ds_idx_type>*>(&index.data());
              vpq_dset != nullptr) {
     // Search using a compressed dataset
     RAFT_FAIL("FP32 VPQ dataset support is coming soon");
   } else if (auto* vpq_dset = dynamic_cast<const vpq_dataset<half, ds_idx_type>*>(&index.data());
              vpq_dset != nullptr) {
+    if (params.num_entry_points > 0) {
+      RAFT_FAIL("GEMM based entry point distance computation is not supported for vpq_dataset.");
+    }
     auto desc = dataset_descriptor_init_with_cache<T, InternalIdxT, DistanceT>(
       res, params, *vpq_dset, index.metric());
     search_main_core<T, InternalIdxT, DistanceT, my_anns_v1SampleFilterT>(
-      res, params, desc, graph_internal, queries, neighbors, distances, sample_filter);
+      res, params, index, desc, graph_internal, queries, neighbors, distances, sample_filter);
   } else if (auto* empty_dset = dynamic_cast<const empty_dataset<ds_idx_type>*>(&index.data());
              empty_dset != nullptr) {
     // Forgot to add a dataset.
