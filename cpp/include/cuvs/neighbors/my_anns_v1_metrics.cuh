@@ -32,6 +32,13 @@ struct MyAnnsV1Metrics {
   uint64_t global_distance_calculation_counter4;
   uint64_t global_distance_calculation_counter3_4_counter;
 
+  uint32_t param_smem_size;
+  uint32_t param_min_iterations;
+  uint32_t param_max_iterations;
+  uint32_t param_hash_bitlen;
+  uint32_t param_small_hash_bitlen;
+  uint32_t param_small_hash_reset_interval;
+
   __host__ __device__ void reset()
   {
     counter_clk_thread = 0;
@@ -59,6 +66,13 @@ struct MyAnnsV1Metrics {
     global_distance_calculation_counter3           = 0;
     global_distance_calculation_counter4           = 0;
     global_distance_calculation_counter3_4_counter = 0;
+
+    param_smem_size = 0;
+    param_min_iterations = 0;
+    param_max_iterations = 0;
+    param_hash_bitlen = 0;
+    param_small_hash_bitlen = 0;
+    param_small_hash_reset_interval = 0;
   }
 };
 
@@ -162,6 +176,13 @@ struct MyAnnsV1MetricsAccumulator {
     std::cout << "global_distance_calculation_counter3: " << metrics.global_distance_calculation_counter3 << std::endl;
     std::cout << "global_distance_calculation_counter4: " << metrics.global_distance_calculation_counter4 << std::endl;
     std::cout << "global_distance_calculation_counter3_4_counter: " << metrics.global_distance_calculation_counter3_4_counter << std::endl;
+
+    std::cout << "param_smem_size: " << metrics.param_smem_size << std::endl;
+    std::cout << "param_min_iterations: " << metrics.param_min_iterations << std::endl;
+    std::cout << "param_max_iterations: " << metrics.param_max_iterations << std::endl;
+    std::cout << "param_hash_bitlen: " << metrics.param_hash_bitlen << std::endl;
+    std::cout << "param_small_hash_bitlen: " << metrics.param_small_hash_bitlen << std::endl;
+    std::cout << "param_small_hash_reset_interval: " << metrics.param_small_hash_reset_interval << std::endl;
 
     std::cout << "num_executed_iterations: " << num_executed_iterations << std::endl;
     std::cout << "num_queries: " << num_queries << std::endl;

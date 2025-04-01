@@ -554,11 +554,9 @@ __device__ void search_core(
   using INDEX_T    = typename DATASET_DESCRIPTOR_T::INDEX_T;
   using DISTANCE_T = typename DATASET_DESCRIPTOR_T::DISTANCE_T;
 
-  static_assert(
-    std::is_same_v<EntryPointsPolicy,
-                   ComputeRandomEntryPoints<INDEX_T>> ||
-      std::is_same_v<EntryPointsPolicy, MemcpyEntryPoints<INDEX_T, DISTANCE_T>>,
-    "Unknown EntryPointsPolicy");
+  static_assert(std::is_same_v<EntryPointsPolicy, ComputeRandomEntryPoints<INDEX_T>> ||
+                  std::is_same_v<EntryPointsPolicy, MemcpyEntryPoints<INDEX_T, DISTANCE_T>>,
+                "Unknown EntryPointsPolicy");
 
 #ifdef _GRAPH_QUALITY_ANALYSIS
   __shared__ uint64_t local_distance_calculation_counter1;
@@ -639,9 +637,7 @@ __device__ void search_core(
 
   // compute distance to randomly selecting nodes
   // _CLK_START();
-  if constexpr (std::is_same_v<
-                  EntryPointsPolicy,
-                  ComputeRandomEntryPoints<INDEX_T>>) {
+  if constexpr (std::is_same_v<EntryPointsPolicy, ComputeRandomEntryPoints<INDEX_T>>) {
     entry_points_policy(query_id,
                         result_indices_buffer,
                         result_distances_buffer,

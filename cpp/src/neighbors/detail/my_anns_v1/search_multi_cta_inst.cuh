@@ -37,12 +37,13 @@ namespace cuvs::neighbors::my_anns_v1::detail::multi_cta_search {
     uint32_t block_size,                                                      \
     uint32_t result_buffer_size,                                              \
     uint32_t smem_size,                                                       \
+    uint32_t small_hash_bitlen,                                               \
     int64_t hash_bitlen,                                                      \
     IndexT* hashmap_ptr,                                                      \
     uint32_t num_cta_per_query,                                               \
     uint32_t num_seeds,                                                       \
     SampleFilterT sample_filter,                                              \
-    MyAnnsV1Metrics* metrics,                                                    \
+    MyAnnsV1Metrics* metrics,                                                 \
     cudaStream_t stream);
 #else
 #define instantiate_kernel_selection(DataT, IndexT, DistanceT, SampleFilterT) \

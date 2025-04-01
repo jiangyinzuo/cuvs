@@ -321,7 +321,13 @@ struct search : search_plan_impl<DataT, IndexT, DistanceT, SAMPLE_FILTER_T> {
     MyAnnsV1MetricsAccumulator::get_instance().accumulate(my_anns_v1_metrics_host,
                                                           my_num_executed_iterations_host,
                                                           num_queries,
-                                                          MyAnnsV1KernelTyp::kSingleCta);
+                                                          MyAnnsV1KernelType::kSingleCta);
+    MyAnnsV1MetricsAccumulator::get_instance().metrics.param_min_iterations    = min_iterations;
+    MyAnnsV1MetricsAccumulator::get_instance().metrics.param_max_iterations    = max_iterations;
+    MyAnnsV1MetricsAccumulator::get_instance().metrics.param_hash_bitlen       = hash_bitlen;
+    MyAnnsV1MetricsAccumulator::get_instance().metrics.param_small_hash_bitlen = small_hash_bitlen;
+    MyAnnsV1MetricsAccumulator::get_instance().metrics.param_small_hash_reset_interval =
+      small_hash_reset_interval;
 #endif
   }
 };

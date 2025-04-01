@@ -172,6 +172,14 @@ class cuvs_my_anns_v1 : public algo<T>, public algo_gpu {
     counters["metrics_distance_calculation_counter3_4_counter"] =
       metric_accumulator.metrics.global_distance_calculation_counter3_4_counter;
 
+    counters["param_smem_size"]         = metric_accumulator.metrics.param_smem_size;
+    counters["param_min_itrations"]     = metric_accumulator.metrics.param_min_iterations;
+    counters["param_max_itrations"]     = metric_accumulator.metrics.param_max_iterations;
+    counters["param_hash_bitlen"]       = metric_accumulator.metrics.param_hash_bitlen;
+    counters["param_small_hash_bitlen"] = metric_accumulator.metrics.param_small_hash_bitlen;
+    counters["param_small_hash_reset_interval"] =
+      metric_accumulator.metrics.param_small_hash_reset_interval;
+
     counters["metrics_num_executed_iterations"] = metric_accumulator.num_executed_iterations;
     counters["metrics_num_queries"]             = metric_accumulator.num_queries;
     counters["kernel_type"]                     = static_cast<int>(metric_accumulator.kernel_type);

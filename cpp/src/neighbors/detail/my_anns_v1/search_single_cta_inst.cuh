@@ -40,9 +40,8 @@ namespace cuvs::neighbors::my_anns_v1::detail::single_cta_search {
     IndexT* hashmap_ptr,                                                                         \
     size_t small_hash_bitlen,                                                                    \
     size_t small_hash_reset_interval,                                                            \
-    uint32_t num_seeds,                                                                          \
     SampleFilterT sample_filter,                                                                 \
-    EntryPointsPolicy entry_points_policy,                                                       \
+    const EntryPointsPolicy& entry_points_policy,                                                \
     MyAnnsV1Metrics* metrics,                                                                    \
     cudaStream_t stream);
 #else

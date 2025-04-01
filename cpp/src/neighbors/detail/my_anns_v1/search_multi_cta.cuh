@@ -270,7 +270,7 @@ struct search : public search_plan_impl<DataT, IndexT, DistanceT, SAMPLE_FILTER_
     raft::resource::sync_stream(res, stream);
     // uint32_t* num_executed_iterations_host = new uint32_t[num_queries];
     // raft::update_host(num_executed_iterations_host, num_executed_iterations, num_queries, stream);
-    MyAnnsV1MetricsAccumulator::get_instance().accumulate(my_anns_v1_metrics_host, my_num_executed_iterations_host, num_queries, MyAnnsV1KernelTyp::kMultiCta);
+    MyAnnsV1MetricsAccumulator::get_instance().accumulate(my_anns_v1_metrics_host, my_num_executed_iterations_host, num_queries, MyAnnsV1KernelType::kMultiCta);
 #endif
   }
 };

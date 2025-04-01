@@ -42,6 +42,7 @@
 #include <raft/util/cuda_rt_essentials.hpp>
 #include <raft/util/cudart_utils.hpp>  // RAFT_CUDA_TRY_NOT_THROW is used TODO(tfeher): consider moving this to cuda_rt_essentials.hpp
 
+#include "entry_points_policy.cuh"
 #include <algorithm>
 #include <cassert>
 #include <cstdio>
@@ -49,7 +50,6 @@
 #include <memory>
 #include <numeric>
 #include <vector>
-#include "entry_points_policy.cuh"
 
 namespace cuvs::neighbors::my_anns_v1::detail {
 namespace multi_cta_search {
@@ -328,14 +328,14 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
     __syncthreads();
     _CLK_REC(clk_pickup_parents);
 #ifdef _GRAPH_QUALITY_ANALYSIS
-    if (METRIC_THREAD_COND()) {
-      atomicAdd(&my_anns_v1_metrics->counter_pickup_parents, 1UL);
-    }
+    if (METRIC_THREAD_COND()) { atomicAdd(&my_anns_v1_metrics->counter_pickup_parents, 1UL); }
 #endif
 
     if ((parent_indices_buffer[0] == invalid_index) && (iter >= min_iteration)) { break; }
 
-    _CLK_START();
+#ifdef _GRAPH_QUALITY_ANALYSIS
+    auto clk_insert_hashmap_start = clock64();
+#endif
     for (unsigned i = threadIdx.x; i < result_buffer_size_32; i += blockDim.x) {
       INDEX_T index = result_indices_buffer[i];
       if (index == invalid_index) { continue; }
@@ -355,31 +355,39 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
     if (threadIdx.x == blockDim.x - 1) { result_position[0] = result_buffer_size_32; }
     __syncthreads();
 
+#ifdef _GRAPH_QUALITY_ANALYSIS
+    if (METRIC_THREAD_COND()) {
+      auto clk_insert_hashmap = clock64() - clk_insert_hashmap_start;
+      atomicAdd(&my_anns_v1_metrics->clk_insert_hashmap, (uint64_t)clk_insert_hashmap);
+    }
+#endif
+
     const AlwaysUnvisited always_unvisited;
     // Compute the norms between child nodes and query node
-    device::compute_distance_to_child_nodes<INDEX_T, DISTANCE_T, DATASET_DESCRIPTOR_T, AlwaysUnvisited, 0>(
-      result_indices_buffer,
-      result_distances_buffer,
-      *dataset_desc,
-      knn_graph,
-      graph_degree,
-      local_visited_hashmap_ptr,
-      visited_hash_bitlen,
-      local_traversed_hashmap_ptr,
-      traversed_hash_bitlen,
-      parent_indices_buffer,
-      result_indices_buffer,
-      1,
-      always_unvisited,
-      result_position,
-      result_buffer_size_32
+    device::compute_distance_to_child_nodes<INDEX_T,
+                                            DISTANCE_T,
+                                            DATASET_DESCRIPTOR_T,
+                                            AlwaysUnvisited,
+                                            0>(result_indices_buffer,
+                                               result_distances_buffer,
+                                               *dataset_desc,
+                                               knn_graph,
+                                               graph_degree,
+                                               local_visited_hashmap_ptr,
+                                               visited_hash_bitlen,
+                                               local_traversed_hashmap_ptr,
+                                               traversed_hash_bitlen,
+                                               parent_indices_buffer,
+                                               result_indices_buffer,
+                                               1,
+                                               always_unvisited,
 #ifdef _GRAPH_QUALITY_ANALYSIS
-                                            ,
-                                            my_anns_v1_metrics,
-                                            &local_distance_calculation_counter1,
-                                            &local_distance_calculation_counter2
+                                               my_anns_v1_metrics,
+                                               &local_distance_calculation_counter1,
+                                               &local_distance_calculation_counter2,
 #endif
-      );
+                                               result_position,
+                                               result_buffer_size_32);
     // __syncthreads();
 
     // Check the state of the nodes in the result buffer which were not updated
@@ -394,7 +402,7 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
       }
     }
     __syncthreads();
-    _CLK_REC(clk_compute_distance);
+    // _CLK_REC(clk_compute_distance);
 
     // Filtering
     if constexpr (!std::is_same<SAMPLE_FILTER_T,
@@ -516,8 +524,8 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
               local_distance_calculation_counter2);
     atomicAdd(&my_anns_v1_metrics->global_distance_calculation_counter3_4_counter, 1UL);
     // printf(
-    //   "GRAPH: my_anns_v1-multi-cta, file: %s, line: %d, query_id: %u, num_executed_iterations: %u, "
-    //   "min_iteration: %u, max_iteration: %u, local_distance_calculation_counter1: %lu, "
+    //   "GRAPH: my_anns_v1-multi-cta, file: %s, line: %d, query_id: %u, num_executed_iterations:
+    //   %u, " "min_iteration: %u, max_iteration: %u, local_distance_calculation_counter1: %lu, "
     //   "local_distance_calculation_counter2: %lu\n",
     //   __FILE__,
     //   __LINE__,
@@ -530,8 +538,8 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
     //
     // if (cta_id == 0 && query_id == 0) {
     //   printf(
-    //     "GRAPH: my_anns_v1-multi-cta, file: %s, line: %d, global_distance_calculation_counter1: %lu, "
-    //     "global_distance_calculation_counter2: %lu, num_queries: %u\n",
+    //     "GRAPH: my_anns_v1-multi-cta, file: %s, line: %d, global_distance_calculation_counter1:
+    //     %lu, " "global_distance_calculation_counter2: %lu, num_queries: %u\n",
     //     __FILE__,
     //     __LINE__,
     //     *graph_metrics_global_distance_calculation_counter1_ptr,

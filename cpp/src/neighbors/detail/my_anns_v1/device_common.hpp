@@ -228,15 +228,13 @@ RAFT_DEVICE_INLINE_FUNCTION void compute_distance_to_child_nodes(
   const IndexT* __restrict__ internal_topk_list,
   const uint32_t search_width,
   const HashtableAdditionalCondition &hashtable_additional_condition,
-  int* __restrict__ result_position = nullptr,
-  const int max_result_position     = 0
 #ifdef _GRAPH_QUALITY_ANALYSIS
-  ,
   MyAnnsV1Metrics* __restrict__ metrics,
   uint64_t* __restrict__ local_distance_calculation_counter1,
-  uint64_t* __restrict__ local_distance_calculation_counter2
-  )
+  uint64_t* __restrict__ local_distance_calculation_counter2,
 #endif
+  int* __restrict__ result_position = nullptr,
+  const int max_result_position     = 0
 )
 {
   constexpr IndexT index_msb_1_mask = utils::gen_index_msb_1_mask<IndexT>::value;
@@ -289,7 +287,7 @@ RAFT_DEVICE_INLINE_FUNCTION void compute_distance_to_child_nodes(
 #ifdef _GRAPH_QUALITY_ANALYSIS
   if (METRIC_THREAD_COND()) {
     atomicAdd(&metrics->clk_insert_hashmap, clk_insert_hashmap);
-    atomicAsdd(&metric->clk_load_gmem_graph, clk_load_gmem_graph);
+    atomicAdd(&metrics->clk_load_gmem_graph, clk_load_gmem_graph);
     atomicAdd(&metrics->counter_insert_hashmap, count_insert_hashmap);
   }
 #endif
@@ -297,7 +295,7 @@ RAFT_DEVICE_INLINE_FUNCTION void compute_distance_to_child_nodes(
 
 #ifdef _GRAPH_QUALITY_ANALYSIS
   uint64_t temp_local_distance_calculation_counter1 = 0;
-  clk_start                                         = clock64();
+  uint64_t clk_start                                         = clock64();
 #endif
   // Compute the distance to child nodes
   const auto team_size_bits   = dataset_desc.team_size_bitshift_from_smem();
