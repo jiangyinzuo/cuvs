@@ -30,12 +30,8 @@
 
 namespace cuvs::neighbors::my_anns_v1::detail::single_cta_search {
 instantiate_kernel_selection(
-  uint8_t, uint32_t, float, cuvs::neighbors::filtering::none_sample_filter, ComputeRandomEntryPoints<uint32_t>);
+  float, uint32_t, float, cuvs::neighbors::filtering::none_sample_filter, ComputeRandomEntryPoints<uint32_t>, visited_table::Cache<uint32_t>);
 instantiate_kernel_selection(
-  uint8_t, uint32_t, float, cuvs::neighbors::filtering::none_sample_filter, MemcpyEntryPoints<uint32_t COMMA float>);
-instantiate_kernel_selection(
-  uint8_t, uint32_t, float, my_anns_v1SampleFilterWithQueryIdOffset<cuvs::neighbors::filtering::bitset_filter<uint32_t COMMA int64_t>>, ComputeRandomEntryPoints<uint32_t>);
-instantiate_kernel_selection(
-  uint8_t, uint32_t, float, my_anns_v1SampleFilterWithQueryIdOffset<cuvs::neighbors::filtering::bitset_filter<uint32_t COMMA int64_t>>, MemcpyEntryPoints<uint32_t COMMA float>);
+  float, uint32_t, float, my_anns_v1SampleFilterWithQueryIdOffset<cuvs::neighbors::filtering::bitset_filter<uint32_t COMMA int64_t>>, ComputeRandomEntryPoints<uint32_t>, visited_table::Cache<uint32_t>);
 
 }  // namespace cuvs::neighbors::my_anns_v1::detail::single_cta_search

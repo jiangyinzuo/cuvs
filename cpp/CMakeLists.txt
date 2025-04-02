@@ -368,10 +368,25 @@ if(BUILD_SHARED_LIBS)
     src/neighbors/detail/my_anns_v1/search_multi_cta_half_uint32.cu
     src/neighbors/detail/my_anns_v1/search_multi_cta_int8_uint32.cu
     src/neighbors/detail/my_anns_v1/search_multi_cta_uint8_uint32.cu
-    src/neighbors/detail/my_anns_v1/search_single_cta_float_uint32.cu
-    src/neighbors/detail/my_anns_v1/search_single_cta_half_uint32.cu
-    src/neighbors/detail/my_anns_v1/search_single_cta_int8_uint32.cu
-    src/neighbors/detail/my_anns_v1/search_single_cta_uint8_uint32.cu
+    src/neighbors/detail/my_anns_v1/search_single_cta_float_uint32_compute_random_cache.cu
+    src/neighbors/detail/my_anns_v1/search_single_cta_float_uint32_compute_random_single_mem_hash.cu
+    src/neighbors/detail/my_anns_v1/search_single_cta_float_uint32_memcpy_cache.cu
+    src/neighbors/detail/my_anns_v1/search_single_cta_float_uint32_memcpy_single_mem_hash.cu
+    src/neighbors/detail/my_anns_v1/search_single_cta_half_uint32_compute_random_cache.cu
+    src/neighbors/detail/my_anns_v1/search_single_cta_half_uint32_compute_random_single_mem_hash.cu
+    src/neighbors/detail/my_anns_v1/search_single_cta_half_uint32_memcpy_cache.cu
+    src/neighbors/detail/my_anns_v1/search_single_cta_half_uint32_memcpy_single_mem_hash.cu
+    src/neighbors/detail/my_anns_v1/search_single_cta_inst.cuh
+    src/neighbors/detail/my_anns_v1/search_single_cta_int8_uint32_compute_random_cache.cu
+    src/neighbors/detail/my_anns_v1/search_single_cta_int8_uint32_compute_random_single_mem_hash.cu
+    src/neighbors/detail/my_anns_v1/search_single_cta_int8_uint32_memcpy_cache.cu
+    src/neighbors/detail/my_anns_v1/search_single_cta_int8_uint32_memcpy_single_mem_hash.cu
+    src/neighbors/detail/my_anns_v1/search_single_cta_kernel-inl.cuh
+    src/neighbors/detail/my_anns_v1/search_single_cta_kernel.cuh
+    src/neighbors/detail/my_anns_v1/search_single_cta_uint8_uint32_compute_random_cache.cu
+    src/neighbors/detail/my_anns_v1/search_single_cta_uint8_uint32_compute_random_single_mem_hash.cu
+    src/neighbors/detail/my_anns_v1/search_single_cta_uint8_uint32_memcpy_cache.cu
+    src/neighbors/detail/my_anns_v1/search_single_cta_uint8_uint32_memcpy_single_mem_hash.cu
   )
 
   file(GLOB_RECURSE compute_distance_sources "src/neighbors/detail/my_anns_v1/compute_distance_*.cu")

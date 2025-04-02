@@ -17,7 +17,7 @@
 
 #include "bitonic.hpp"
 #include "compute_distance-ext.cuh"
-#include "device_common.hpp"
+#include "device_common.cuh"
 #include "hashmap.hpp"
 #include "search_multi_cta_kernel.cuh"
 #include "search_plan.cuh"

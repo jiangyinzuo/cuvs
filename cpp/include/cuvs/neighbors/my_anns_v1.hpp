@@ -171,7 +171,7 @@ enum class search_algo {
   AUTO
 };
 
-enum class hash_mode { HASH, SMALL, AUTO };
+enum class hash_mode { HASH, SMALL, CACHE, AUTO };
 
 struct search_params : cuvs::neighbors::search_params {
   /**
@@ -586,7 +586,8 @@ struct index : cuvs::neighbors::index {
   {
     auto dataset_view = dataset();
     auto d = dataset_->dim();
-    return raft::make_device_strided_matrix_view<const T, uint32_t>(dataset_view.data_handle(), num_entry_points, d, d);
+    auto stride = dataset_view.stride(0);
+    return raft::make_device_strided_matrix_view<const T, uint32_t>(dataset_view.data_handle(), num_entry_points, d, stride);
   }
 
   void precompute_dataset_norms(raft::resources const& res);

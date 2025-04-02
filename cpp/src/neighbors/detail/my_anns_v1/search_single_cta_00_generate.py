@@ -67,17 +67,21 @@ search_types = dict(
 
 # knn
 for type_path, (data_t, idx_t, distance_t) in search_types.items():
-    path = f"search_single_cta_{type_path}.cu"
-    with open(path, "w") as f:
-        f.write(header)
-        for sample_filter in ("cuvs::neighbors::filtering::none_sample_filter", "my_anns_v1SampleFilterWithQueryIdOffset<cuvs::neighbors::filtering::bitset_filter<uint32_t COMMA int64_t>>"):
-            for entry_points_policy in (
-                    f"ComputeRandomEntryPoints<{idx_t}>",
-                    f"MemcpyEntryPoints<{idx_t} COMMA {distance_t}>"):
-                f.write(
-                        f"instantiate_kernel_selection(\n  {data_t}, {idx_t}, {distance_t}, {sample_filter}, {entry_points_policy});\n"
-                )
+    for entry_points_policy, entry_points_path in (
+            (f"ComputeRandomEntryPoints<{idx_t}>", "compute_random"),
+            (f"MemcpyEntryPoints<{idx_t} COMMA {distance_t}>", "memcpy")):
+        for visited_table, visited_table_path in (
+                (f"visited_table::SingleMemHashtable<{idx_t}>", "single_mem_hash"),
+                (f"visited_table::Cache<{idx_t}>", "cache"),
+                ):
+            path = f"search_single_cta_{type_path}_{entry_points_path}_{visited_table_path}.cu"
+            with open(path, "w") as f:
+                f.write(header)
+                for sample_filter in ("cuvs::neighbors::filtering::none_sample_filter", "my_anns_v1SampleFilterWithQueryIdOffset<cuvs::neighbors::filtering::bitset_filter<uint32_t COMMA int64_t>>"):
+                            f.write(
+                                    f"instantiate_kernel_selection(\n  {data_t}, {idx_t}, {distance_t}, {sample_filter}, {entry_points_policy}, {visited_table});\n"
+                            )
 
-        f.write(trailer)
-        # For pasting into CMakeLists.txt
-        print(f"src/neighbors/detail/my_anns_v1/{path}")
+                f.write(trailer)
+                # For pasting into CMakeLists.txt
+                print(f"src/neighbors/detail/my_anns_v1/{path}")

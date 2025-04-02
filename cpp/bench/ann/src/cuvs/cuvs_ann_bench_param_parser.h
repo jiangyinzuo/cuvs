@@ -359,6 +359,16 @@ void parse_search_param(const nlohmann::json& conf,
   if (conf.contains("thread_block_size")) {
     param.p.thread_block_size = conf.at("thread_block_size");
   }
+  param.p.num_entry_points = conf.value("num_entry_points", 512);
+  if (conf.at("hash_mode") == "hash") {
+    param.p.hashmap_mode = cuvs::neighbors::my_anns_v1::hash_mode::HASH;
+  } else if (conf.at("hash_mode") == "small") {
+    param.p.hashmap_mode = cuvs::neighbors::my_anns_v1::hash_mode::SMALL;
+  } else if (conf.at("hash_mode") == "cache") {
+    param.p.hashmap_mode = cuvs::neighbors::my_anns_v1::hash_mode::CACHE;
+  } else if (conf.at("hash_mode") == "auto") {
+    param.p.hashmap_mode = cuvs::neighbors::my_anns_v1::hash_mode::AUTO;
+  }
   if (conf.contains("algo")) {
     if (conf.at("algo") == "single_cta") {
       param.p.algo = cuvs::neighbors::my_anns_v1::search_algo::SINGLE_CTA;
@@ -381,7 +391,6 @@ void parse_search_param(const nlohmann::json& conf,
   }
   // Same ratio as in IVF-PQ
   param.refine_ratio = conf.value("refine_ratio", 1.0f);
-  param.num_entry_points = conf.value("num_entry_points", 512);
 
   // enable dynamic batching
   parse_dynamic_batching_params(conf, param);

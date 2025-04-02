@@ -15,7 +15,7 @@
  */
 #pragma once
 
-#include "device_common.hpp"
+#include "device_common.cuh"
 #include "hashmap.hpp"
 #include "utils.hpp"
 

@@ -67,7 +67,6 @@ class cuvs_my_anns_v1 : public algo<T>, public algo_gpu {
     double dynamic_batching_dispatch_timeout_ms = 0.01;
     size_t dynamic_batching_n_queues            = 8;
     bool dynamic_batching_conservative_dispatch = false;
-    uint32_t num_entry_points;
   };
 
   struct build_param {
@@ -318,7 +317,6 @@ void cuvs_my_anns_v1<T, IdxT>::set_search_param(const search_param_base& param,
   dynamic_batching_conservative_dispatch_ = sp.dynamic_batching_conservative_dispatch;
   search_params_                          = sp.p;
   refine_ratio_                           = sp.refine_ratio;
-  num_entry_points_                       = sp.num_entry_points;
 
   if (sp.graph_mem != graph_mem_) {
     // Move graph to correct memory space

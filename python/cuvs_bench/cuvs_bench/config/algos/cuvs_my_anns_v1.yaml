@@ -12,7 +12,9 @@ groups:
       # must be multiple of 32
       itopk: [32, 64, 128, 256, 512]
       search_width: [1, 2, 4]
-      num_entry_points: [0, 32, 64, 128, 256, 512, 1024, 4096, 8192, 16384]
+      # 16384: oom
+      num_entry_points: [0, 32, 64, 128, 256, 512, 1024, 2048, 4096]
+      hash_mode: ["auto", "cache"]
   graph_analysis_v2:
     build:
       graph_degree: [16, 32, 48, 64, 96, 128]

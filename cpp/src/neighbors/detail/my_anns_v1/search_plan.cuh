@@ -182,17 +182,18 @@ struct search_plan_impl : public search_plan_impl_base {
 
   virtual ~search_plan_impl() {}
 
-  virtual void operator()(raft::resources const& res,
-                          const index<DATA_T, INDEX_T>& index, // used for entry points GEMM distance computation
-                          raft::device_matrix_view<const INDEX_T, int64_t, raft::row_major> graph,
-                          INDEX_T* const result_indices_ptr,       // [num_queries, topk]
-                          DISTANCE_T* const result_distances_ptr,  // [num_queries, topk]
-                          const DATA_T* const queries_ptr,         // [num_queries, dataset_dim]
-                          const std::uint32_t num_queries,
-                          const INDEX_T* dev_seed_ptr,                   // [num_queries, num_seeds]
-                          std::uint32_t* const num_executed_iterations,  // [num_queries]
-                          uint32_t topk,
-                          SAMPLE_FILTER_T sample_filter){};
+  virtual void operator()(
+    raft::resources const& res,
+    const index<DATA_T, INDEX_T>& index,  // used for entry points GEMM distance computation
+    raft::device_matrix_view<const INDEX_T, int64_t, raft::row_major> graph,
+    INDEX_T* const result_indices_ptr,       // [num_queries, topk]
+    DISTANCE_T* const result_distances_ptr,  // [num_queries, topk]
+    const DATA_T* const queries_ptr,         // [num_queries, dataset_dim]
+    const std::uint32_t num_queries,
+    const INDEX_T* dev_seed_ptr,                   // [num_queries, num_seeds]
+    std::uint32_t* const num_executed_iterations,  // [num_queries]
+    uint32_t topk,
+    SAMPLE_FILTER_T sample_filter) {};
 
   void adjust_search_params()
   {
@@ -285,7 +286,8 @@ struct search_plan_impl : public search_plan_impl_base {
       }
       RAFT_EXPECTS(hash_bitlen <= 25, "hash_bitlen cannot be largen than 25 (32M)");
     } else {
-      while (hashmap_mode == hash_mode::AUTO || hashmap_mode == hash_mode::SMALL) {
+      while (hashmap_mode == hash_mode::AUTO || hashmap_mode == hash_mode::SMALL ||
+             hashmap_mode == hash_mode::CACHE) {
         //
         // The small-hash reduces hash table size by initializing the hash table
         // for each iteration and re-registering only the nodes that should not be

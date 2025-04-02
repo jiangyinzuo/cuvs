@@ -18,7 +18,7 @@
 #include "bitonic.hpp"
 #include "compute_distance-ext.cuh"
 #include "compute_entry_points_distance.cuh"
-#include "device_common.hpp"
+#include "device_common.cuh"
 #include "entry_points_policy.cuh"
 #include "hashmap.hpp"
 #include "search_plan.cuh"
@@ -26,6 +26,7 @@
 #include "topk_by_radix.cuh"
 #include "topk_for_my_anns_v1/topk.h"  // TODO replace with raft topk
 #include "utils.hpp"
+#include "visited_table.cuh"
 
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/logger.hpp>
@@ -243,28 +244,16 @@ struct search : search_plan_impl<DataT, IndexT, DistanceT, SAMPLE_FILTER_T> {
     const ComputeRandomEntryPoints<IndexT> compute_random_entry_points(
       dev_seed_ptr, num_seeds, num_random_samplings, rand_xor_mask);
     if (this->num_entry_points == 0) {
-      select_and_run(dataset_desc,
-                     graph,
-                     result_indices_ptr,
-                     result_distances_ptr,
-                     queries_ptr,
-                     num_queries,
-                     num_executed_iterations,
-                     *this,
-                     topk,
-                     num_itopk_candidates,
-                     static_cast<uint32_t>(thread_block_size),
-                     smem_size,
-                     hash_bitlen,
-                     hashmap.data(),
-                     small_hash_bitlen,
-                     small_hash_reset_interval,
-                     sample_filter,
-                     compute_random_entry_points,
-#ifdef _GRAPH_QUALITY_ANALYSIS
-                     my_anns_v1_metrics.data(),
-#endif
-                     stream);
+      select_entry_points_policy_and_run(stream,
+                                         graph,
+                                         result_indices_ptr,
+                                         result_distances_ptr,
+                                         queries_ptr,
+                                         num_queries,
+                                         num_executed_iterations,
+                                         topk,
+                                         sample_filter,
+                                         compute_random_entry_points);
     } else {
       auto stream = raft::resource::get_cuda_stream(res);
       const std::size_t coarse_buffer_size =
@@ -282,28 +271,18 @@ struct search : search_plan_impl<DataT, IndexT, DistanceT, SAMPLE_FILTER_T> {
                                                               coarse_indices_dev.data());
       const MemcpyEntryPoints<IndexT, DistanceT> memcpy_entry_points(
         coarse_indices_dev.data(), coarse_distances_dev.data(), num_entry_points);
-      select_and_run(dataset_desc,
-                     graph,
-                     result_indices_ptr,
-                     result_distances_ptr,
-                     queries_ptr,
-                     num_queries,
-                     num_executed_iterations,
-                     *this,
-                     topk,
-                     num_itopk_candidates,
-                     static_cast<uint32_t>(thread_block_size),
-                     smem_size,
-                     hash_bitlen,
-                     hashmap.data(),
-                     small_hash_bitlen,
-                     small_hash_reset_interval,
-                     sample_filter,
-                     memcpy_entry_points,
-#ifdef _GRAPH_QUALITY_ANALYSIS
-                     my_anns_v1_metrics.data(),
-#endif
-                     stream);
+      select_entry_points_policy_and_run(stream,
+                                         graph,
+                                         result_indices_ptr,
+                                         result_distances_ptr,
+                                         queries_ptr,
+                                         num_queries,
+                                         num_executed_iterations,
+                                         topk,
+                                         sample_filter,
+                                         memcpy_entry_points
+
+      );
     }
 
 #ifdef _GRAPH_QUALITY_ANALYSIS
@@ -329,6 +308,75 @@ struct search : search_plan_impl<DataT, IndexT, DistanceT, SAMPLE_FILTER_T> {
     MyAnnsV1MetricsAccumulator::get_instance().metrics.param_small_hash_reset_interval =
       small_hash_reset_interval;
 #endif
+  }
+
+ private:
+  template <typename EntryPointsPolicy>
+  void select_entry_points_policy_and_run(
+    rmm::cuda_stream_view stream,
+    raft::device_matrix_view<const INDEX_T, int64_t, raft::row_major> graph,
+    INDEX_T* const result_indices_ptr,       // [num_queries, topk]
+    DISTANCE_T* const result_distances_ptr,  // [num_queries, topk]
+    const DATA_T* const queries_ptr,         // [num_queries, dataset_dim]
+    const std::uint32_t num_queries,
+    std::uint32_t* const num_executed_iterations,  // [num_queries]
+    uint32_t topk,
+    SAMPLE_FILTER_T sample_filter,
+    EntryPointsPolicy& entry_points_policy)
+  {
+    if (hashmap_mode == hash_mode::CACHE) {
+      visited_table::Cache<INDEX_T> visited_table{nullptr, (uint32_t)small_hash_bitlen};
+      select_and_run(dataset_desc,
+                     graph,
+                     result_indices_ptr,
+                     result_distances_ptr,
+                     queries_ptr,
+                     num_queries,
+                     num_executed_iterations,
+                     *this,
+                     topk,
+                     num_itopk_candidates,
+                     static_cast<uint32_t>(thread_block_size),
+                     smem_size,
+                     sample_filter,
+                     entry_points_policy,
+                     visited_table,
+#ifdef _GRAPH_QUALITY_ANALYSIS
+                     my_anns_v1_metrics.data(),
+#endif
+                     stream);
+    } else {
+      const auto small_hash_size = hashmap::get_size(small_hash_bitlen);
+      visited_table::SingleMemHashtable<INDEX_T> visited_table;
+      if (small_hash_bitlen) {
+        // use shared memory
+        visited_table = visited_table::SingleMemHashtable<IndexT>{
+          nullptr, (uint32_t)small_hash_bitlen, (uint32_t)small_hash_reset_interval};
+      } else {
+        // use global memory
+        visited_table = visited_table::SingleMemHashtable<IndexT>{
+          hashmap.data(), (uint32_t)hash_bitlen, (uint32_t)small_hash_reset_interval};
+      }
+      select_and_run(dataset_desc,
+                     graph,
+                     result_indices_ptr,
+                     result_distances_ptr,
+                     queries_ptr,
+                     num_queries,
+                     num_executed_iterations,
+                     *this,
+                     topk,
+                     num_itopk_candidates,
+                     static_cast<uint32_t>(thread_block_size),
+                     smem_size,
+                     sample_filter,
+                     entry_points_policy,
+                     visited_table,
+#ifdef _GRAPH_QUALITY_ANALYSIS
+                     my_anns_v1_metrics.data(),
+#endif
+                     stream);
+    }
   }
 };
 

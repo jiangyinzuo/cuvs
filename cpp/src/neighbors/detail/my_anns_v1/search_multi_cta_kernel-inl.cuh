@@ -19,12 +19,13 @@
 
 #include "bitonic.hpp"
 #include "compute_distance-ext.cuh"
-#include "device_common.hpp"
+#include "device_common.cuh"
 #include "graph_analysis_macros.h"
 #include "hashmap.hpp"
 #include "search_plan.cuh"
 #include "topk_for_my_anns_v1/topk.h"  // TODO replace with raft topk if possible
 #include "utils.hpp"
+#include "visited_table.cuh"
 
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/logger.hpp>
@@ -160,7 +161,10 @@ RAFT_DEVICE_INLINE_FUNCTION void topk_by_bitonic_sort(float* distances,  // [num
 //
 // multiple CTAs per single query
 //
-template <std::uint32_t MAX_ELEMENTS, class DATASET_DESCRIPTOR_T, class SAMPLE_FILTER_T>
+template <std::uint32_t MAX_ELEMENTS,
+          class DATASET_DESCRIPTOR_T,
+          class SAMPLE_FILTER_T,
+          class VisitedTable>
 #ifndef NDEBUG
 RAFT_KERNEL search_kernel(
 #else
@@ -178,15 +182,12 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
   const uint64_t rand_xor_mask,
   const typename DATASET_DESCRIPTOR_T::INDEX_T* seed_ptr,  // [num_queries, num_seeds]
   const uint32_t num_seeds,
-  const uint32_t visited_hash_bitlen,
-  typename DATASET_DESCRIPTOR_T::INDEX_T* const
-    traversed_hashmap_ptr,  // [num_queries, 1 << traversed_hash_bitlen]
-  const uint32_t traversed_hash_bitlen,
   const uint32_t itopk_size,
   const uint32_t min_iteration,
   const uint32_t max_iteration,
   uint32_t* const num_executed_iterations, /* stats */
-  SAMPLE_FILTER_T sample_filter
+  SAMPLE_FILTER_T sample_filter,
+  VisitedTable visited_table
 #ifdef _GRAPH_QUALITY_ANALYSIS
   ,
   MyAnnsV1Metrics* my_anns_v1_metrics
@@ -249,14 +250,9 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
     reinterpret_cast<INDEX_T*>(smem + dataset_desc->smem_ws_size_in_bytes());
   auto* __restrict__ result_distances_buffer =
     reinterpret_cast<DISTANCE_T*>(result_indices_buffer + result_buffer_size_32);
-  auto* __restrict__ local_visited_hashmap_ptr =
-    reinterpret_cast<INDEX_T*>(result_distances_buffer + result_buffer_size_32);
-  auto* __restrict__ parent_indices_buffer =
-    reinterpret_cast<INDEX_T*>(local_visited_hashmap_ptr + hashmap::get_size(visited_hash_bitlen));
+  auto* __restrict__ parent_indices_buffer = visited_table.setup_table(
+    reinterpret_cast<INDEX_T*>(result_distances_buffer + result_buffer_size_32));
   auto* __restrict__ result_position = reinterpret_cast<int*>(parent_indices_buffer + 1);
-
-  INDEX_T* const local_traversed_hashmap_ptr =
-    traversed_hashmap_ptr + (hashmap::get_size(traversed_hash_bitlen) * query_id);
 
   constexpr INDEX_T invalid_index    = ~static_cast<INDEX_T>(0);
   constexpr INDEX_T index_msb_1_mask = utils::gen_index_msb_1_mask<INDEX_T>::value;
@@ -265,7 +261,6 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
     result_indices_buffer[i]   = invalid_index;
     result_distances_buffer[i] = utils::get_max_value<DISTANCE_T>();
   }
-  hashmap::init<INDEX_T>(local_visited_hashmap_ptr, visited_hash_bitlen);
   __syncthreads();
   _CLK_REC(clk_init);
 
@@ -283,10 +278,7 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
                                            rand_xor_mask,
                                            local_seed_ptr,
                                            num_seeds,
-                                           local_visited_hashmap_ptr,
-                                           visited_hash_bitlen,
-                                           local_traversed_hashmap_ptr,
-                                           traversed_hash_bitlen,
+                                           visited_table,
 #ifdef _GRAPH_QUALITY_ANALYSIS
                                            my_anns_v1_metrics,
                                            &local_distance_calculation_counter1,
@@ -319,11 +311,11 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
       pickup_next_parent<INDEX_T, DISTANCE_T>(parent_indices_buffer,
                                               result_indices_buffer,
                                               result_distances_buffer,
-                                              local_traversed_hashmap_ptr,
-                                              traversed_hash_bitlen);
+                                              visited_table.gmem_table,
+                                              visited_table.gmem_bitlen);
     } else {
       // [Other warps] Reset visited hashmap
-      hashmap::init<INDEX_T>(local_visited_hashmap_ptr, visited_hash_bitlen, 32);
+      hashmap::init<INDEX_T>(visited_table.smem_table, visited_table.smem_bitlen, 32);
     }
     __syncthreads();
     _CLK_REC(clk_pickup_parents);
@@ -342,13 +334,13 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
       if ((i >= itopk_size) && (index & index_msb_1_mask)) {
         // Remove nodes kicked out of the itopk list from the traversed hash table.
         hashmap::remove<INDEX_T>(
-          local_traversed_hashmap_ptr, traversed_hash_bitlen, index & ~index_msb_1_mask);
+          visited_table.gmem_table, visited_table.gmem_bitlen, index & ~index_msb_1_mask);
         result_indices_buffer[i]   = invalid_index;
         result_distances_buffer[i] = utils::get_max_value<DISTANCE_T>();
       } else {
         // Restore visited hashmap by putting nodes on result buffer in it.
         index &= ~index_msb_1_mask;
-        hashmap::insert(local_visited_hashmap_ptr, visited_hash_bitlen, index);
+        hashmap::insert(visited_table.smem_table, visited_table.smem_bitlen, index);
       }
     }
     // Initialize buffer for compute_distance_to_child_nodes.
@@ -368,15 +360,13 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
                                             DISTANCE_T,
                                             DATASET_DESCRIPTOR_T,
                                             AlwaysUnvisited,
+                                            VisitedTable,
                                             0>(result_indices_buffer,
                                                result_distances_buffer,
                                                *dataset_desc,
                                                knn_graph,
                                                graph_degree,
-                                               local_visited_hashmap_ptr,
-                                               visited_hash_bitlen,
-                                               local_traversed_hashmap_ptr,
-                                               traversed_hash_bitlen,
+                                               visited_table,
                                                parent_indices_buffer,
                                                result_indices_buffer,
                                                1,
@@ -396,7 +386,7 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
     for (uint32_t i = threadIdx.x; i < result_position[0]; i += blockDim.x) {
       INDEX_T index = result_indices_buffer[i];
       if (index == invalid_index || index & index_msb_1_mask) { continue; }
-      if (hashmap::search<INDEX_T, 1>(local_traversed_hashmap_ptr, traversed_hash_bitlen, index)) {
+      if (hashmap::search<INDEX_T, 1>(visited_table.gmem_table, visited_table.gmem_bitlen, index)) {
         result_indices_buffer[i]   = invalid_index;
         result_distances_buffer[i] = utils::get_max_value<DISTANCE_T>();
       }
@@ -451,7 +441,7 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
           index &= ~index_msb_1_mask;
         } else if ((offset < itopk_size) &&
                    hashmap::insert<INDEX_T, 1>(
-                     local_traversed_hashmap_ptr, traversed_hash_bitlen, index)) {
+                     visited_table.gmem_table, visited_table.gmem_bitlen, index)) {
           // If a node that is not used as a parent can be inserted into
           // the traversed hash table, it is considered a valid result.
           is_valid = true;
@@ -469,7 +459,7 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
         } else {
           // If it is valid and registered in the traversed hash table but is
           // not output as a result, it is removed from the hash table.
-          hashmap::remove<INDEX_T>(local_traversed_hashmap_ptr, traversed_hash_bitlen, index);
+          hashmap::remove<INDEX_T>(visited_table.gmem_table, visited_table.gmem_bitlen, index);
         }
       }
       offset += __popc(mask);
@@ -578,21 +568,22 @@ void set_value_batch(T* const dev_ptr,
     <<<grid_size, block_size, 0, cuda_stream>>>(dev_ptr, ld, val, count, batch_size);
 }
 
-template <typename DATASET_DESCRIPTOR_T, typename SAMPLE_FILTER_T>
+template <typename DATASET_DESCRIPTOR_T, typename SAMPLE_FILTER_T, typename VisitedTable>
 struct search_kernel_config {
   // Search kernel function type. Note that the actual values for the template value
   // parameters do not matter, because they are not part of the function signature. The
   // second to fourth value parameters will be selected by the choose_* functions below.
-  using kernel_t = decltype(&search_kernel<128, DATASET_DESCRIPTOR_T, SAMPLE_FILTER_T>);
+  using kernel_t =
+    decltype(&search_kernel<128, DATASET_DESCRIPTOR_T, SAMPLE_FILTER_T, VisitedTable>);
 
   static auto choose_buffer_size(unsigned result_buffer_size, unsigned block_size) -> kernel_t
   {
     if (result_buffer_size <= 64) {
-      return search_kernel<64, DATASET_DESCRIPTOR_T, SAMPLE_FILTER_T>;
+      return search_kernel<64, DATASET_DESCRIPTOR_T, SAMPLE_FILTER_T, VisitedTable>;
     } else if (result_buffer_size <= 128) {
-      return search_kernel<128, DATASET_DESCRIPTOR_T, SAMPLE_FILTER_T>;
+      return search_kernel<128, DATASET_DESCRIPTOR_T, SAMPLE_FILTER_T, VisitedTable>;
     } else if (result_buffer_size <= 256) {
-      return search_kernel<256, DATASET_DESCRIPTOR_T, SAMPLE_FILTER_T>;
+      return search_kernel<256, DATASET_DESCRIPTOR_T, SAMPLE_FILTER_T, VisitedTable>;
     }
     THROW("Result buffer size %u larger than max buffer size %u", result_buffer_size, 256);
   }
@@ -624,9 +615,11 @@ void select_and_run(const dataset_descriptor_host<DataT, IndexT, DistanceT>& dat
 #endif
                     cudaStream_t stream)
 {
-  auto kernel =
-    search_kernel_config<dataset_descriptor_base_t<DataT, IndexT, DistanceT>,
-                         SampleFilterT>::choose_buffer_size(result_buffer_size, block_size);
+  auto kernel = search_kernel_config<
+    dataset_descriptor_base_t<DataT, IndexT, DistanceT>,
+    SampleFilterT,
+    visited_table::SharedGlobalMemHashtable<IndexT>>::choose_buffer_size(result_buffer_size,
+                                                                         block_size);
 
   RAFT_CUDA_TRY(
     cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size));
@@ -646,6 +639,12 @@ void select_and_run(const dataset_descriptor_host<DataT, IndexT, DistanceT>& dat
                  num_cta_per_query,
                  num_queries,
                  smem_size);
+  visited_table::SharedGlobalMemHashtable<IndexT> visited_table{
+    .smem_table  = (IndexT*)nullptr,
+    .smem_bitlen = visited_hash_bitlen,
+    .gmem_table  = traversed_hashmap_ptr,
+    .gmem_bitlen = (uint32_t)traversed_hash_bitlen};
+
   kernel<<<grid_dims, block_dims, smem_size, stream>>>(topk_indices_ptr,
                                                        topk_distances_ptr,
                                                        dataset_desc.dev_ptr(stream),
@@ -656,14 +655,12 @@ void select_and_run(const dataset_descriptor_host<DataT, IndexT, DistanceT>& dat
                                                        ps.rand_xor_mask,
                                                        dev_seed_ptr,
                                                        num_seeds,
-                                                       visited_hash_bitlen,
-                                                       traversed_hashmap_ptr,
-                                                       traversed_hash_bitlen,
                                                        ps.itopk_size,
                                                        ps.min_iterations,
                                                        ps.max_iterations,
                                                        num_executed_iterations,
-                                                       sample_filter
+                                                       sample_filter,
+                                                       visited_table
 #ifdef _GRAPH_QUALITY_ANALYSIS
                                                        ,
                                                        my_anns_v1_metrics

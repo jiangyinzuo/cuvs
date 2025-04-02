@@ -26,7 +26,8 @@ template <typename DataT,
           typename IndexT,
           typename DistanceT,
           typename SampleFilterT,
-          typename EntryPointsPolicy>
+          typename EntryPointsPolicy,
+          class VisitedTable>
 void select_and_run(const dataset_descriptor_host<DataT, IndexT, DistanceT>& dataset_desc,
                     raft::device_matrix_view<const IndexT, int64_t, raft::row_major> graph,
                     IndexT* topk_indices_ptr,       // [num_queries, topk]
@@ -39,14 +40,11 @@ void select_and_run(const dataset_descriptor_host<DataT, IndexT, DistanceT>& dat
                     uint32_t num_itopk_candidates,
                     uint32_t block_size,  //
                     uint32_t smem_size,
-                    int64_t hash_bitlen,
-                    IndexT* hashmap_ptr,
-                    size_t small_hash_bitlen,
-                    size_t small_hash_reset_interval,
                     SampleFilterT sample_filter,
                     const EntryPointsPolicy& entry_points_policy,
+                    VisitedTable& visited_table,
 #ifdef _GRAPH_QUALITY_ANALYSIS
-                    MyAnnsV1Metrics* metrics,
+                    MyAnnsV1Metrics* my_anns_v1_metrics,
 #endif
                     cudaStream_t stream);
 

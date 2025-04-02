@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 #pragma once
-#include "device_common.hpp"
+#include "device_common.cuh"
 #include "kernel_debug.cuh"
 
 namespace cuvs::neighbors::my_anns_v1::detail {
@@ -33,14 +33,13 @@ class ComputeRandomEntryPoints {
   {
   }
 
-  template <typename DistanceT, class DATASET_DESCRIPTOR_T>
+  template <typename DistanceT, class DATASET_DESCRIPTOR_T, class VisitedTable>
   __device__ __forceinline__ void operator()(const uint32_t query_id,
                                              IndexT* result_indices_buffer,
                                              DistanceT* result_distances_buffer,
                                              const DATASET_DESCRIPTOR_T* dataset_desc,
                                              const uint32_t result_buffer_size,
-                                             IndexT* local_visited_hashmap_ptr,
-                                             int64_t hash_bitlen
+                                             VisitedTable visited_table
 #ifdef _GRAPH_QUALITY_ANALYSIS
                                              ,
                                              MyAnnsV1Metrics* my_anns_v1_metrics,
@@ -61,10 +60,7 @@ class ComputeRandomEntryPoints {
                                              rand_xor_mask,
                                              local_seed_ptr,
                                              num_seeds,
-                                             local_visited_hashmap_ptr,
-                                             hash_bitlen,
-                                             (IndexT*)nullptr,
-                                             0
+                                             visited_table
 #ifdef _GRAPH_QUALITY_ANALYSIS
                                              ,
                                              my_anns_v1_metrics,

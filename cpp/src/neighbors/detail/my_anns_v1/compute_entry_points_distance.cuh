@@ -76,26 +76,28 @@ void compute_entry_point_distances(
 
   raft::device_matrix_view<const T, uint32_t, raft::layout_stride> entry_points_view =
     index.entry_points(num_entry_points);
-  // A: Queries, [n_queries, dim]
-  // B: Entry points, [num_entry_points, dim]
-  // A x B^T: Queries x Entry points^T (cublas is column-major, so we need to swap A and B)
+  // A: Queries, [n_queries, dim] (row major)
+  // B: Entry points, [num_entry_points, dim (stride)] (row major)
+  // C = A x B^T: Queries x Entry points^T (cublas is column-major, so we need to swap A and B)
+  // C^T = (B^T)^T x A^T
   // m: n_queries, n: num_entry_points, k: dim
   if constexpr (std::is_same_v<T, float> && std::is_same_v<DistanceT, float>) {
-    raft::linalg::detail::cublasgemm(index.cublas_handle(),
-                                     CUBLAS_OP_T,
-                                     CUBLAS_OP_N,
-                                     num_entry_points,
-                                     num_queries,
-                                     index.dim(),
-                                     &alpha,
-                                     entry_points_view.data_handle(),
-                                     num_entry_points,
-                                     dev_queries,
-                                     index.dim(),
-                                     &beta,
-                                     distance_buffer_dev.data(),
-                                     num_entry_points,
-                                     stream.value());
+    raft::linalg::detail::cublasgemm(
+      index.cublas_handle(),
+      CUBLAS_OP_T,
+      CUBLAS_OP_N,
+      num_entry_points,
+      num_queries,
+      index.dim(),
+      &alpha,
+      entry_points_view.data_handle(),  // B^T: [dim (stride), num_entry_points]
+      entry_points_view.stride(0),
+      dev_queries,  // A^T: [n_dim, n_queries]
+      index.dim(),
+      &beta,
+      distance_buffer_dev.data(),  // C^T: [num_entry_points, num_queries]
+      num_entry_points,
+      stream.value());
   } else {
     raft::linalg::gemm(res,
                        true,
@@ -105,7 +107,7 @@ void compute_entry_point_distances(
                        index.dim(),
                        &alpha,
                        entry_points_view.data_handle(),
-                       num_entry_points,
+                       entry_points_view.stride(0),
                        dev_queries,
                        index.dim(),
                        &beta,

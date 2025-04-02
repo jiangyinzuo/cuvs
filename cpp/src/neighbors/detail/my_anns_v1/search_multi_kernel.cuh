@@ -16,7 +16,7 @@
 #pragma once
 
 #include "compute_distance-ext.cuh"
-#include "device_common.hpp"
+#include "device_common.cuh"
 #include "hashmap.hpp"
 #include "search_plan.cuh"
 #include "topk_for_my_anns_v1/topk.h"  //todo replace with raft kernel
