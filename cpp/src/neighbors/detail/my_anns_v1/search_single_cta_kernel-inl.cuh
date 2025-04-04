@@ -742,6 +742,10 @@ __device__ void search_core(
 
         if (threadIdx.x == 0) { *terminate_flag = 0; }
       }
+      bool first_iter = (iter == 0);
+      if constexpr (std::is_same_v<EntryPointsPolicy, MemcpyEntryPoints<INDEX_T, DISTANCE_T>>) {
+        first_iter = false;
+      }
       topk_by_bitonic_sort_and_merge<MAX_ITOPK, MAX_CANDIDATES>(
         result_distances_buffer,
         result_indices_buffer,
@@ -750,7 +754,7 @@ __device__ void search_core(
         result_indices_buffer + internal_topk,
         search_width * graph_degree,
         topk_ws,
-        (iter == 0),
+        first_iter,
         multi_warps_1,
         multi_warps_2);
       __syncthreads();
@@ -933,6 +937,11 @@ __device__ void search_core(
       __syncthreads();
       const unsigned multi_warps_1 = ((blockDim.x >= 64) && (MAX_CANDIDATES > 128)) ? 1 : 0;
       const unsigned multi_warps_2 = ((blockDim.x >= 64) && (MAX_ITOPK > 256)) ? 1 : 0;
+
+      bool first_iter = (iter == 0);
+      if constexpr (std::is_same_v<EntryPointsPolicy, MemcpyEntryPoints<INDEX_T, DISTANCE_T>>) {
+        first_iter = false;
+      }
       topk_by_bitonic_sort_and_merge<MAX_ITOPK, MAX_CANDIDATES>(
         result_distances_buffer,
         result_indices_buffer,
@@ -941,7 +950,7 @@ __device__ void search_core(
         result_indices_buffer + internal_topk,
         search_width * graph_degree,
         topk_ws,
-        (iter == 0),
+        first_iter,
         multi_warps_1,
         multi_warps_2);
     }

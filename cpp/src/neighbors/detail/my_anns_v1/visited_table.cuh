@@ -22,8 +22,6 @@
 namespace cuvs::neighbors::my_anns_v1::detail {
 namespace visited_table {
 
-RAFT_INLINE_FUNCTION uint32_t get_size(const uint32_t bitlen) { return 1U << bitlen; }
-
 // CAGRA single-CTA mode, can be in shared memory or global memory
 template <typename IdxT>
 struct SingleMemHashtable {
@@ -93,7 +91,6 @@ struct SharedGlobalMemHashtable {
     return smem + hashmap::get_size(smem_bitlen);
   }
 
-
   IdxT* smem_table;
   uint32_t smem_bitlen;
   IdxT* gmem_table;
@@ -109,10 +106,10 @@ struct Cache {
   {
     static_assert(sizeof(IdxT) == 4);
     constexpr IdxT hashval_empty = ~static_cast<IdxT>(0);
-    const uint32_t size          = get_size(bitlen);
-    const uint32_t bit_mask      = size / 4 - 1;
+    const uint32_t size          = hashmap::get_size(bitlen);
+    const uint32_t bit_mask      = size - 1;
     IdxT index                   = key & bit_mask;
-    uint4* group                 = reinterpret_cast<uint4*>(&s_cache[index * 4]);
+    uint4* group                 = reinterpret_cast<uint4*>(s_cache) + (index / 4);
 
     uint4 keys;
     device::lds(keys, group);
@@ -120,13 +117,13 @@ struct Cache {
     bool exists = (keys.x == key) | (keys.y == key) | (keys.z == key) | (keys.w == key);
     if (exists) return true;
 
-    int replace_pos = threadIdx.x % 4;
-    replace_pos     = (keys.x == hashval_empty) ? 0 : replace_pos;
-    replace_pos     = (keys.y == hashval_empty) ? 1 : replace_pos;
-    replace_pos     = (keys.z == hashval_empty) ? 2 : replace_pos;
-    replace_pos     = (keys.w == hashval_empty) ? 3 : replace_pos;
+    uint32_t replace_pos = threadIdx.x % 4;
+    replace_pos          = (keys.x == hashval_empty) ? 0 : replace_pos;
+    replace_pos          = (keys.y == hashval_empty) ? 1 : replace_pos;
+    replace_pos          = (keys.z == hashval_empty) ? 2 : replace_pos;
+    replace_pos          = (keys.w == hashval_empty) ? 3 : replace_pos;
 
-    reinterpret_cast<uint32_t*>(group)[replace_pos] = key;
+    reinterpret_cast<IdxT*>(group)[replace_pos] = key;
     return false;
   }
 
@@ -140,6 +137,17 @@ struct Cache {
 
   IdxT* s_cache;
   uint32_t bitlen;
+};
+
+template <typename IdxT>
+struct AlwaysUnvisited {
+  RAFT_DEVICE_INLINE_FUNCTION bool search_and_try_insert(const IdxT key) {
+    return false;
+  }
+
+  RAFT_DEVICE_INLINE_FUNCTION IdxT* setup_table(IdxT* smem) {
+    return smem;
+  }
 };
 
 }  // namespace visited_table

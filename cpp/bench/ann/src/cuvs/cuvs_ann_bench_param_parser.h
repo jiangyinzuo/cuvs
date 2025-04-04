@@ -366,6 +366,8 @@ void parse_search_param(const nlohmann::json& conf,
     param.p.hashmap_mode = cuvs::neighbors::my_anns_v1::hash_mode::SMALL;
   } else if (conf.at("hash_mode") == "cache") {
     param.p.hashmap_mode = cuvs::neighbors::my_anns_v1::hash_mode::CACHE;
+  } else if (conf.at("hash_mode") == "always_unvisited") {
+    param.p.hashmap_mode = cuvs::neighbors::my_anns_v1::hash_mode::ALWAYS_UNVISITED;
   } else if (conf.at("hash_mode") == "auto") {
     param.p.hashmap_mode = cuvs::neighbors::my_anns_v1::hash_mode::AUTO;
   }

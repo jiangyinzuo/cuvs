@@ -324,58 +324,85 @@ struct search : search_plan_impl<DataT, IndexT, DistanceT, SAMPLE_FILTER_T> {
     SAMPLE_FILTER_T sample_filter,
     EntryPointsPolicy& entry_points_policy)
   {
-    if (hashmap_mode == hash_mode::CACHE) {
-      visited_table::Cache<INDEX_T> visited_table{nullptr, (uint32_t)small_hash_bitlen};
-      select_and_run(dataset_desc,
-                     graph,
-                     result_indices_ptr,
-                     result_distances_ptr,
-                     queries_ptr,
-                     num_queries,
-                     num_executed_iterations,
-                     *this,
-                     topk,
-                     num_itopk_candidates,
-                     static_cast<uint32_t>(thread_block_size),
-                     smem_size,
-                     sample_filter,
-                     entry_points_policy,
-                     visited_table,
+    switch (hashmap_mode) {
+      case hash_mode::CACHE: {
+        visited_table::Cache<INDEX_T> visited_table{nullptr, (uint32_t)small_hash_bitlen};
+        select_and_run(dataset_desc,
+                       graph,
+                       result_indices_ptr,
+                       result_distances_ptr,
+                       queries_ptr,
+                       num_queries,
+                       num_executed_iterations,
+                       *this,
+                       topk,
+                       num_itopk_candidates,
+                       static_cast<uint32_t>(thread_block_size),
+                       smem_size,
+                       sample_filter,
+                       entry_points_policy,
+                       visited_table,
 #ifdef _GRAPH_QUALITY_ANALYSIS
-                     my_anns_v1_metrics.data(),
+                       my_anns_v1_metrics.data(),
 #endif
-                     stream);
-    } else {
-      const auto small_hash_size = hashmap::get_size(small_hash_bitlen);
-      visited_table::SingleMemHashtable<INDEX_T> visited_table;
-      if (small_hash_bitlen) {
-        // use shared memory
-        visited_table = visited_table::SingleMemHashtable<IndexT>{
-          nullptr, (uint32_t)small_hash_bitlen, (uint32_t)small_hash_reset_interval};
-      } else {
-        // use global memory
-        visited_table = visited_table::SingleMemHashtable<IndexT>{
-          hashmap.data(), (uint32_t)hash_bitlen, (uint32_t)small_hash_reset_interval};
+                       stream);
+        break;
       }
-      select_and_run(dataset_desc,
-                     graph,
-                     result_indices_ptr,
-                     result_distances_ptr,
-                     queries_ptr,
-                     num_queries,
-                     num_executed_iterations,
-                     *this,
-                     topk,
-                     num_itopk_candidates,
-                     static_cast<uint32_t>(thread_block_size),
-                     smem_size,
-                     sample_filter,
-                     entry_points_policy,
-                     visited_table,
+      case hash_mode::ALWAYS_UNVISITED: {
+        visited_table::AlwaysUnvisited<INDEX_T> visited_table;
+        select_and_run(dataset_desc,
+                       graph,
+                       result_indices_ptr,
+                       result_distances_ptr,
+                       queries_ptr,
+                       num_queries,
+                       num_executed_iterations,
+                       *this,
+                       topk,
+                       num_itopk_candidates,
+                       static_cast<uint32_t>(thread_block_size),
+                       smem_size,
+                       sample_filter,
+                       entry_points_policy,
+                       visited_table,
 #ifdef _GRAPH_QUALITY_ANALYSIS
-                     my_anns_v1_metrics.data(),
+                       my_anns_v1_metrics.data(),
 #endif
-                     stream);
+                       stream);
+        break;
+      }
+      default:
+        // cagra
+        const auto small_hash_size = hashmap::get_size(small_hash_bitlen);
+        visited_table::SingleMemHashtable<INDEX_T> visited_table;
+        if (small_hash_bitlen) {
+          // use shared memory
+          visited_table = visited_table::SingleMemHashtable<IndexT>{
+            nullptr, (uint32_t)small_hash_bitlen, (uint32_t)small_hash_reset_interval};
+        } else {
+          // use global memory
+          visited_table = visited_table::SingleMemHashtable<IndexT>{
+            hashmap.data(), (uint32_t)hash_bitlen, (uint32_t)small_hash_reset_interval};
+        }
+        select_and_run(dataset_desc,
+                       graph,
+                       result_indices_ptr,
+                       result_distances_ptr,
+                       queries_ptr,
+                       num_queries,
+                       num_executed_iterations,
+                       *this,
+                       topk,
+                       num_itopk_candidates,
+                       static_cast<uint32_t>(thread_block_size),
+                       smem_size,
+                       sample_filter,
+                       entry_points_policy,
+                       visited_table,
+#ifdef _GRAPH_QUALITY_ANALYSIS
+                       my_anns_v1_metrics.data(),
+#endif
+                       stream);
     }
   }
 };

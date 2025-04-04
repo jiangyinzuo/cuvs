@@ -171,7 +171,7 @@ enum class search_algo {
   AUTO
 };
 
-enum class hash_mode { HASH, SMALL, CACHE, AUTO };
+enum class hash_mode { HASH, SMALL, CACHE, ALWAYS_UNVISITED, AUTO };
 
 struct search_params : cuvs::neighbors::search_params {
   /**

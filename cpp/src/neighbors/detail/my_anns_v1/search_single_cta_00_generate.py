@@ -73,6 +73,7 @@ for type_path, (data_t, idx_t, distance_t) in search_types.items():
         for visited_table, visited_table_path in (
                 (f"visited_table::SingleMemHashtable<{idx_t}>", "single_mem_hash"),
                 (f"visited_table::Cache<{idx_t}>", "cache"),
+                (f"visited_table::AlwaysUnvisited<{idx_t}>", "always_unvisited"),
                 ):
             path = f"search_single_cta_{type_path}_{entry_points_path}_{visited_table_path}.cu"
             with open(path, "w") as f:
