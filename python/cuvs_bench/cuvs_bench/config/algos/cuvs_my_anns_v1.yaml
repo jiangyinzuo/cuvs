@@ -5,16 +5,39 @@ constraints:
 groups:
   base:
     build:
+      # graph_degree: [16, 32, 48, 128]
       graph_degree: [16, 32, 48, 64, 96, 128]
       intermediate_graph_degree: [16, 32, 48, 64, 96, 128]
       graph_build_algo: ["NN_DESCENT"]
     search:
       # must be multiple of 32
+      # itopk: [128, 256, 512]
+      # itopk: [32, 64]
       itopk: [32, 64, 128, 256, 512]
+      # search_width: [1]
       search_width: [1, 2, 4]
       # 16384: oom
       num_entry_points: [0, 32, 64, 128, 256, 512, 1024, 2048, 4096]
-      hash_mode: ["auto", "cache"]
+      # hash_mode: ["auto", "cache", "always_unvisited"]
+      hash_mode: ["auto"]
+      algo: ["auto"]
+    # build:
+    #   graph_degree: [16, 32, 48, 128]
+    #   # graph_degree: [16, 32, 48, 64, 96, 128]
+    #   intermediate_graph_degree: [16, 32, 48, 64, 96, 128]
+    #   graph_build_algo: ["NN_DESCENT"]
+    # search:
+    #   # must be multiple of 32
+    #   # itopk: [128, 256, 512]
+    #   # itopk: [32, 64]
+    #   itopk: [32, 64, 128]
+    #   search_width: [1]
+    #   # search_width: [1, 2, 4]
+    #   # 16384: oom
+    #   num_entry_points: [0, 32, 64, 128, 256, 512, 1024, 2048, 4096]
+    #   # hash_mode: ["auto", "cache", "always_unvisited"]
+    #   hash_mode: ["auto"]
+    #   algo: ["warp_distance", "multi_cta"]
   graph_analysis_v2:
     build:
       graph_degree: [16, 32, 48, 64, 96, 128]

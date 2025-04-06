@@ -62,13 +62,21 @@ struct standard_descriptor_spec : public instance_spec<DataT, IndexT, DistanceT>
     // If explicit team_size is specified and doesn't match the instance, discard it
     if (params.team_size != 0 && TeamSize != params.team_size) { return -1.0; }
     if (Metric != metric) { return -1.0; }
+    // a warp compute a distance, so team size must be a multiple of warp size
+    if (params.algo == search_algo::WARP_DISTANCE) {
+      if (TeamSize != 32) { return -1.0; }
+    }
     // Otherwise, favor the closest dataset dimensionality.
     return 1.0 / (0.1 + std::abs(double(dataset.dim()) - double(DatasetBlockDim)));
   }
 
  private:
   static dataset_descriptor_host<DataT, IndexT, DistanceT> init_(
-    const my_anns_v1::search_params& params, const DataT* ptr, IndexT size, uint32_t dim, uint32_t ld);
+    const my_anns_v1::search_params& params,
+    const DataT* ptr,
+    IndexT size,
+    uint32_t dim,
+    uint32_t ld);
 };
 
 }  // namespace cuvs::neighbors::my_anns_v1::detail

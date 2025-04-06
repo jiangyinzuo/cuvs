@@ -15,17 +15,12 @@
  */
 #pragma once
 
-#include "bitonic.hpp"
-#include "compute_distance-ext.cuh"
 #include "compute_entry_points_distance.cuh"
-#include "device_common.cuh"
 #include "entry_points_policy.cuh"
 #include "hashmap.hpp"
 #include "search_plan.cuh"
 #include "search_single_cta_kernel.cuh"
 #include "topk_by_radix.cuh"
-#include "topk_for_my_anns_v1/topk.h"  // TODO replace with raft topk
-#include "utils.hpp"
 #include "visited_table.cuh"
 
 #include <raft/core/device_mdspan.hpp>

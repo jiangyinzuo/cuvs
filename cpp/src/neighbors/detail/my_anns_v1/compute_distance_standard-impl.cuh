@@ -17,6 +17,8 @@
 
 #include "compute_distance_standard.hpp"
 
+#include "kernel_debug.cuh"
+
 #include <cuvs/distance/distance.hpp>
 #include <raft/core/operators.hpp>
 #include <raft/util/pow2_utils.cuh>
@@ -185,9 +187,13 @@ RAFT_DEVICE_INLINE_FUNCTION auto compute_distance_standard_worker(
   constexpr auto reg_nelem =
     raft::div_rounding_up_unsafe<uint32_t>(kDatasetBlockDim, kTeamSize * vlen);
 
+  DEBUG_PRINTF(
+    "team size: %u , kDatasetBlockDim: %u, reg_nelem: %u, dim: %u\n", kTeamSize, kDatasetBlockDim, reg_nelem, dim);
+
   DISTANCE_T r = 0;
   for (uint32_t elem_offset = (threadIdx.x % kTeamSize) * vlen; elem_offset < dim;
        elem_offset += kDatasetBlockDim) {
+    DEBUG_PRINTF("elem_offset: %u\n", elem_offset);
     DATA_T data[reg_nelem][vlen];
 #pragma unroll
     for (uint32_t e = 0; e < reg_nelem; e++) {
@@ -196,6 +202,7 @@ RAFT_DEVICE_INLINE_FUNCTION auto compute_distance_standard_worker(
       device::ldg_cg(reinterpret_cast<LOAD_T&>(data[e]),
                      reinterpret_cast<const LOAD_T*>(dataset_ptr + k));
     }
+    DEBUG_PRINTF("ldg_cg end: %u\n", elem_offset);
 #pragma unroll
     for (uint32_t e = 0; e < reg_nelem; e++) {
       const uint32_t k = e * (kTeamSize * vlen) + elem_offset;
@@ -215,6 +222,9 @@ RAFT_DEVICE_INLINE_FUNCTION auto compute_distance_standard_worker(
           d, cuvs::spatial::knn::detail::utils::mapping<QUERY_T>{}(data[e][v]));
       }
     }
+  }
+  if constexpr (std::is_same_v<float, DISTANCE_T>) {
+    DEBUG_PRINTF("worker end, r=%f\n", r);
   }
   return r;
 }

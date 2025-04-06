@@ -50,8 +50,13 @@ float to_float(T v)
   ASSERT_GT(to_float(b), 0);  \
   ASSERT_LE(to_float(a), to_float(b))
 
+struct AnnMyAnnsV1TestParams {
+  my_anns_v1::search_params search_params;
+  uint32_t n_queries;
+};
+
 template <typename data_type>
-class AnnMyAnnsV1PreComputeNorm : public ::testing::TestWithParam<my_anns_v1::search_params> {
+class AnnMyAnnsV1 : public ::testing::TestWithParam<AnnMyAnnsV1TestParams> {
  public:
   using distance_type = float;
 
@@ -211,7 +216,51 @@ class AnnMyAnnsV1PreComputeNorm : public ::testing::TestWithParam<my_anns_v1::se
     }
   }
 
-  void run()
+  raft::host_matrix<int64_t, int64_t> get_exact_neighbors()
+  {
+    // get exact neighbors
+    auto brute_force_neighbors_host = raft::make_host_matrix<int64_t, int64_t>(res, n_queries, k);
+    auto brute_force_distances_host =
+      raft::make_host_matrix<distance_type, int64_t>(res, n_queries, k);
+    {
+      cuvs::neighbors::brute_force::index_params brute_force_index_params;
+      const cuvs::neighbors::brute_force::search_params brute_force_search_params;
+      const cuvs::neighbors::filtering::none_sample_filter filter{};
+      const auto brute_force_index = cuvs::neighbors::brute_force::build(
+        res, brute_force_index_params, raft::make_const_mdspan(dataset->view()));
+      auto brute_force_distances =
+        raft::make_device_matrix<distance_type, int64_t>(res, n_queries, k);
+      auto brute_force_neighbors = raft::make_device_matrix<int64_t, int64_t>(res, n_queries, k);
+      cuvs::neighbors::brute_force::search(res,
+                                           brute_force_search_params,
+                                           brute_force_index,
+                                           raft::make_const_mdspan(queries->view()),
+                                           brute_force_neighbors.view(),
+                                           brute_force_distances.view(),
+                                           filter);
+      raft::copy(brute_force_neighbors_host.data_handle(),
+                 brute_force_neighbors.data_handle(),
+                 brute_force_neighbors.size(),
+                 raft::resource::get_cuda_stream(res));
+      raft::copy(brute_force_distances_host.data_handle(),
+                 brute_force_distances.data_handle(),
+                 brute_force_distances.size(),
+                 raft::resource::get_cuda_stream(res));
+      raft::resource::sync_stream(res);
+    }
+    std::cout << "brute force neighbors & distances: " << std::endl;
+    for (int i = 0; i < n_queries; ++i) {
+      for (size_t j = 0; j < k; ++j) {
+        std::cout << brute_force_neighbors_host(i, j) << " ";
+      }
+      for (size_t j = 0; j < k; ++j) {
+        std::cout << brute_force_distances_host(i, j) << " ";
+      }
+    }
+    return brute_force_neighbors_host;
+  }
+
+  void run_gemm()
   {
     my_anns_v1::index_params my_anns_v1_index_params;
     my_anns_v1_index_params.graph_degree              = 64;
@@ -237,33 +286,11 @@ class AnnMyAnnsV1PreComputeNorm : public ::testing::TestWithParam<my_anns_v1::se
     }
     std::cout << std::endl;
 
-    my_anns_v1::search_params my_anns_v1_search_params =
-      ::testing::TestWithParam<my_anns_v1::search_params>::GetParam();
+    auto test_params = ::testing::TestWithParam<AnnMyAnnsV1TestParams>::GetParam();
 
-    // get exact neighbors
-    auto brute_force_neighbors_host = raft::make_host_matrix<int64_t, int64_t>(res, n_queries, k);
-    {
-      cuvs::neighbors::brute_force::index_params brute_force_index_params;
-      const cuvs::neighbors::brute_force::search_params brute_force_search_params;
-      const cuvs::neighbors::filtering::none_sample_filter filter{};
-      const auto brute_force_index = cuvs::neighbors::brute_force::build(
-        res, brute_force_index_params, raft::make_const_mdspan(dataset->view()));
-      auto brute_force_distances =
-        raft::make_device_matrix<distance_type, int64_t>(res, n_queries, k);
-      auto brute_force_neighbors = raft::make_device_matrix<int64_t, int64_t>(res, n_queries, k);
-      cuvs::neighbors::brute_force::search(res,
-                                           brute_force_search_params,
-                                           brute_force_index,
-                                           raft::make_const_mdspan(queries->view()),
-                                           brute_force_neighbors.view(),
-                                           brute_force_distances.view(),
-                                           filter);
-      raft::copy(brute_force_neighbors_host.data_handle(),
-                 brute_force_neighbors.data_handle(),
-                 brute_force_neighbors.size(),
-                 raft::resource::get_cuda_stream(res));
-      raft::resource::sync_stream(res);
-    }
+    my_anns_v1::search_params my_anns_v1_search_params = test_params.search_params;
+
+    auto brute_force_neighbors_host = get_exact_neighbors();
 
     for (uint32_t num_entry_points : {0, 32, 64, 128, 256, 512, 1024}) {
       if (num_entry_points < my_anns_v1_search_params.itopk_size) {
@@ -380,31 +407,111 @@ class AnnMyAnnsV1PreComputeNorm : public ::testing::TestWithParam<my_anns_v1::se
         }
       }
 
-      // compute recall
-      uint64_t num_correct = 0;
-      for (int i = 0; i < n_queries; ++i) {
-        for (size_t j = 0; j < k; ++j) {
-          for (size_t l = 0; l < k; ++l) {
-            if (my_anns_v1_neighbors_host(i, j) == brute_force_neighbors_host(i, l)) {
-              num_correct++;
-              break;
-            }
+      compute_recall(my_anns_v1_neighbors_host.view(), brute_force_neighbors_host.view());
+    }
+  }
+
+  void compute_recall(raft::host_matrix_view<uint32_t, int64_t> my_anns_v1_neighbors_host,
+                      raft::host_matrix_view<int64_t, int64_t> brute_force_neighbors_host)
+  {
+    // compute recall
+    uint64_t num_correct = 0;
+    for (int i = 0; i < n_queries; ++i) {
+      for (size_t j = 0; j < k; ++j) {
+        for (size_t l = 0; l < k; ++l) {
+          if (my_anns_v1_neighbors_host(i, j) == brute_force_neighbors_host(i, l)) {
+            num_correct++;
+            break;
           }
         }
       }
-      double recall = (double)num_correct / (n_queries * k);
-      std::cout << "recall for num_entry_points=" << my_anns_v1_search_params.num_entry_points
-                << ": " << recall << std::endl;
-      if constexpr (std::is_same_v<data_type, half>) {
-        ASSERT_GE(recall, 0.05) << "Recall is too low: " << recall;
-      } else {
-        ASSERT_GE(recall, 0.10) << "Recall is too low: " << recall;
+    }
+    double recall = (double)num_correct / (n_queries * k);
+    std::cout << "recall: " << recall << std::endl;
+    if constexpr (std::is_same_v<data_type, half>) {
+      ASSERT_GE(recall, 0.05) << "Recall is too low: " << recall;
+    } else {
+      ASSERT_GE(recall, 0.10) << "Recall is too low: " << recall;
+    }
+  }
+
+  void run_warp_distance()
+  {
+    my_anns_v1::index_params my_anns_v1_index_params;
+    my_anns_v1_index_params.graph_degree              = 64;
+    my_anns_v1_index_params.intermediate_graph_degree = 96;
+
+    my_anns_v1::index<data_type, uint32_t> my_anns_v1_index =
+      my_anns_v1::build(res, my_anns_v1_index_params, raft::make_const_mdspan(dataset->view()));
+    raft::resource::sync_stream(res);
+
+    auto test_params = ::testing::TestWithParam<AnnMyAnnsV1TestParams>::GetParam();
+    my_anns_v1::search_params my_anns_v1_search_params = test_params.search_params;
+
+    std::cout << "start search" << std::endl;
+    my_anns_v1::search(res,
+                       my_anns_v1_search_params,
+                       my_anns_v1_index,
+                       raft::make_const_mdspan(queries->view()),
+                       neighbors->view(),
+                       distances->view());
+    std::cout << "neighbors size: " << neighbors->size() << std::endl;
+
+    auto last_error = cudaPeekAtLastError();
+    raft::resource::sync_stream(res);
+    std::cout << "end search" << std::endl;
+
+    ASSERT_EQ(last_error, cudaSuccess)
+      << "Error in my_anns_v1::search: " << cudaGetErrorString(last_error);
+
+    auto my_anns_v1_neighbors_host = raft::make_host_matrix<uint32_t, size_t>(res, n_queries, k);
+    {
+      raft::copy(my_anns_v1_neighbors_host.data_handle(),
+                 neighbors->data_handle(),
+                 neighbors->size(),
+                 raft::resource::get_cuda_stream(res));
+      auto distances_host = raft::make_host_matrix<distance_type, size_t>(res, n_queries, k);
+      raft::copy(distances_host.data_handle(),
+                 distances->data_handle(),
+                 distances->size(),
+                 raft::resource::get_cuda_stream(res));
+      raft::resource::sync_stream(res);
+      std::cout << "result:" << std::endl;
+      for (int i = 0; i < n_queries; ++i) {
+        for (size_t j = 0; j < k; ++j) {
+          std::cout << my_anns_v1_neighbors_host(i, j) << " ";
+        }
+        std::cout << std::endl;
+        for (size_t j = 0; j < k; ++j) {
+          std::cout << distances_host(i, j) << " ";
+        }
+        std::cout << std::endl;
+        for (size_t j = 0; j < k - 1; ++j) {
+          assert_float_lt(distances_host(i, j), distances_host(i, j + 1));
+        }
       }
+    }
+    auto brute_force_neighbors_host = get_exact_neighbors();
+    compute_recall(my_anns_v1_neighbors_host.view(), brute_force_neighbors_host.view());
+  }
+
+  void run()
+  {
+    auto test_params = ::testing::TestWithParam<AnnMyAnnsV1TestParams>::GetParam();
+    my_anns_v1::search_params my_anns_v1_search_params = test_params.search_params;
+    if (my_anns_v1_search_params.algo == search_algo::AUTO) {
+      run_gemm();
+    } else if (my_anns_v1_search_params.algo == search_algo::WARP_DISTANCE) {
+      run_warp_distance();
+    } else {
+      throw std::runtime_error("Untested search algorithm");
     }
   }
 
   void SetUp() override
   {
+    n_queries = GetParam().n_queries;
+
     dataset.emplace(raft::make_device_matrix<data_type, int64_t>(res, n_samples, n_dim));
     queries.emplace(raft::make_device_matrix<data_type, int64_t>(res, n_queries, n_dim));
     neighbors.emplace(raft::make_device_matrix<uint32_t, int64_t>(res, n_queries, k));
@@ -425,6 +532,8 @@ class AnnMyAnnsV1PreComputeNorm : public ::testing::TestWithParam<my_anns_v1::se
   }
 
  private:
+  int64_t n_queries;
+
   raft::resources res;
   std::optional<raft::device_matrix<data_type, int64_t>> dataset       = std::nullopt;
   std::optional<raft::device_matrix<data_type, int64_t>> queries       = std::nullopt;
@@ -433,34 +542,55 @@ class AnnMyAnnsV1PreComputeNorm : public ::testing::TestWithParam<my_anns_v1::se
 
   constexpr static int64_t n_samples                   = 1183514;
   constexpr static int64_t n_dim                       = 100;
-  constexpr static int64_t n_queries                   = 30;
   constexpr static int64_t k                           = 10;
   constexpr static cuvs::distance::DistanceType metric = cuvs::distance::DistanceType::L2Expanded;
 };
 
-static auto generate_search_params()
+using AnnMyAnnsV1_half  = AnnMyAnnsV1<half>;
+using AnnMyAnnsV1_float = AnnMyAnnsV1<float>;
+
+TEST_P(AnnMyAnnsV1_half, Test) { this->run(); }
+TEST_P(AnnMyAnnsV1_float, Test) { this->run(); }
+
+static auto generate_gemm_search_params()
 {
-  std::vector<my_anns_v1::search_params> search_params_vec;
+  std::vector<AnnMyAnnsV1TestParams> params_vec;
   for (auto itopk_size : {32, 48, 64, 96, 128, 256}) {
     my_anns_v1::search_params search_params;
     search_params.itopk_size        = itopk_size;
-    search_params.itopk_size        = 32;
     search_params.thread_block_size = 256;
     search_params.search_width      = 1;
     search_params.max_iterations    = 0;
-    search_params_vec.push_back(search_params);
+
+    params_vec.push_back({search_params, 30});
   }
-  return search_params_vec;
+  return params_vec;
 }
 
-using AnnMyAnnsV1PreComputeNorm_half = AnnMyAnnsV1PreComputeNorm<half>;
-TEST_P(AnnMyAnnsV1PreComputeNorm_half, Test) { this->run(); }
 INSTANTIATE_TEST_CASE_P(AnnMyAnnsV1PreComputeNorm_half,
-                        AnnMyAnnsV1PreComputeNorm_half,
-                        ::testing::ValuesIn(generate_search_params()));
-using AnnMyAnnsV1PreComputeNorm_float = AnnMyAnnsV1PreComputeNorm<float>;
-TEST_P(AnnMyAnnsV1PreComputeNorm_float, Test) { this->run(); }
+                        AnnMyAnnsV1_half,
+                        ::testing::ValuesIn(generate_gemm_search_params()));
 INSTANTIATE_TEST_CASE_P(AnnMyAnnsV1PreComputeNorm_float,
-                        AnnMyAnnsV1PreComputeNorm_float,
-                        ::testing::ValuesIn(generate_search_params()));
+                        AnnMyAnnsV1_float,
+                        ::testing::ValuesIn(generate_gemm_search_params()));
+
+static auto generate_warp_distance_search_params()
+{
+  std::vector<AnnMyAnnsV1TestParams> params_vec;
+  for (auto itopk_size : {32, 48, 64, 96, 128, 256}) {
+    my_anns_v1::search_params search_params;
+    search_params.itopk_size        = itopk_size;
+    search_params.thread_block_size = 256;
+    search_params.search_width      = 1;
+    search_params.max_iterations    = 0;
+    search_params.algo              = search_algo::WARP_DISTANCE;
+
+    params_vec.push_back({search_params, 1});
+  }
+  return params_vec;
+}
+
+INSTANTIATE_TEST_CASE_P(AnnMyAnnsV1_WarpDistance_float,
+                        AnnMyAnnsV1_float,
+                        ::testing::ValuesIn(generate_warp_distance_search_params()));
 }  // namespace cuvs::neighbors::my_anns_v1

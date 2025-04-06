@@ -73,6 +73,11 @@ def cuvs_my_anns_v1_search(params, build_params, k, batch_size):
         result = result and params["itopk"] >= k and params["itopk"] % 32 == 0
     if "num_entry_points" in params:
         result = result and (params["num_entry_points"] == 0 or params["num_entry_points"] >= params["itopk"])
+    if "algo" in params:
+        if params["algo"] == "warp_distance":
+            result = result and params["search_width"] == 1
+        if params["algo"] in ("warp_distance", "multi_cta"):
+            result = result and params["num_entry_points"] == 0 and params["hash_mode"] == "auto"
     return result
 
 

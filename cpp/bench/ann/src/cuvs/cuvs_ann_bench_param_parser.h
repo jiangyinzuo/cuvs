@@ -378,6 +378,8 @@ void parse_search_param(const nlohmann::json& conf,
       param.p.algo = cuvs::neighbors::my_anns_v1::search_algo::MULTI_CTA;
     } else if (conf.at("algo") == "multi_kernel") {
       param.p.algo = cuvs::neighbors::my_anns_v1::search_algo::MULTI_KERNEL;
+    } else if (conf.at("algo") == "warp_distance") {
+      param.p.algo = cuvs::neighbors::my_anns_v1::search_algo::WARP_DISTANCE;
     } else if (conf.at("algo") == "auto") {
       param.p.algo = cuvs::neighbors::my_anns_v1::search_algo::AUTO;
     } else {

@@ -36,7 +36,8 @@ header = """/*
  * > python search_single_cta_00_generate.py
  *
  */
-
+"""
+includes = """
 #include "sample_filter_utils.cuh"
 #include "search_single_cta_inst.cuh"
 
@@ -65,6 +66,32 @@ search_types = dict(
     uint8_uint32=("uint8_t", "uint32_t", "float"),
 )
 
+extern_template_contents: list[str] = []
+def generate_extern_template_content(data_t, idx_t, distance_t, sample_filter, entry_points_policy, visited_table):
+    return f'''
+extern template void select_and_run<{data_t}, {idx_t}, {distance_t}, {sample_filter}, {entry_points_policy}, {visited_table}>(
+    const dataset_descriptor_host<{data_t}, {idx_t}, {distance_t}>& dataset_desc,
+    raft::device_matrix_view<const {idx_t},int64_t,raft::row_major> graph,
+    {idx_t}* topk_indices_ptr,
+    {distance_t}* topk_distances_ptr,
+    const {data_t}* queries_ptr,
+    uint32_t num_queries,
+    uint32_t* num_executed_iterations,
+    const search_params& ps,
+    uint32_t topk,
+    uint32_t num_itopk_candidates,
+    uint32_t block_size,
+    uint32_t smem_size,
+    {sample_filter} sample_filter,
+    const {entry_points_policy}& entry_points_policy,
+    {visited_table}& visited_table,
+#ifdef _GRAPH_QUALITY_ANALYSIS
+    MyAnnsV1Metrics* my_anns_v1_metrics,
+#endif
+    cudaStream_t stream);
+
+    '''
+
 # knn
 for type_path, (data_t, idx_t, distance_t) in search_types.items():
     for entry_points_policy, entry_points_path in (
@@ -78,11 +105,65 @@ for type_path, (data_t, idx_t, distance_t) in search_types.items():
             path = f"search_single_cta_{type_path}_{entry_points_path}_{visited_table_path}.cu"
             with open(path, "w") as f:
                 f.write(header)
+                f.write(includes)
                 for sample_filter in ("cuvs::neighbors::filtering::none_sample_filter", "my_anns_v1SampleFilterWithQueryIdOffset<cuvs::neighbors::filtering::bitset_filter<uint32_t COMMA int64_t>>"):
                             f.write(
                                     f"instantiate_kernel_selection(\n  {data_t}, {idx_t}, {distance_t}, {sample_filter}, {entry_points_policy}, {visited_table});\n"
                             )
+                            extern_template_contents.append(generate_extern_template_content(data_t, idx_t, distance_t, sample_filter, entry_points_policy, visited_table))
 
                 f.write(trailer)
                 # For pasting into CMakeLists.txt
                 print(f"src/neighbors/detail/my_anns_v1/{path}")
+
+with open("search_single_cta_kernel-ext.cuh", "w") as f:
+    includes = '''
+#pragma once
+
+#include "compute_distance-ext.cuh"
+
+#include "sample_filter_utils.cuh"
+#include <cuvs/neighbors/my_anns_v1.hpp>
+#include <cuvs/neighbors/my_anns_v1_metrics.cuh>
+#include "visited_table.cuh"
+#include "entry_points_policy.cuh"
+#define COMMA ,
+
+namespace cuvs::neighbors::my_anns_v1::detail::single_cta_search {
+
+template <typename DataT,
+          typename IndexT,
+          typename DistanceT,
+          typename SampleFilterT,
+          typename EntryPointsPolicy,
+          class VisitedTable>
+void select_and_run(const dataset_descriptor_host<DataT, IndexT, DistanceT>& dataset_desc,
+                    raft::device_matrix_view<const IndexT, int64_t, raft::row_major> graph,
+                    IndexT* topk_indices_ptr,       // [num_queries, topk]
+                    DistanceT* topk_distances_ptr,  // [num_queries, topk]
+                    const DataT* queries_ptr,       // [num_queries, dataset_dim]
+                    uint32_t num_queries,
+                    uint32_t* num_executed_iterations,  // [num_queries,]
+                    const search_params& ps,
+                    uint32_t topk,
+                    uint32_t num_itopk_candidates,
+                    uint32_t block_size,  //
+                    uint32_t smem_size,
+                    SampleFilterT sample_filter,
+                    const EntryPointsPolicy& entry_points_policy,
+                    VisitedTable& visited_table,
+#ifdef _GRAPH_QUALITY_ANALYSIS
+                    MyAnnsV1Metrics* my_anns_v1_metrics,
+#endif
+                    cudaStream_t stream);
+    '''
+    trailer = """
+}  // namespace cuvs::neighbors::my_anns_v1::detail::single_cta_search
+    """
+    f.write(header)
+    f.write(includes)
+    for content in extern_template_contents:
+        f.write(content)
+    f.write(trailer)
+    print("src/neighbors/detail/my_anns_v1/search_single_cta_kernel-ext.cuh")
+

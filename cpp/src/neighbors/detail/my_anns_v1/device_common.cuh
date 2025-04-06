@@ -17,6 +17,7 @@
 
 #include "graph_analysis_macros.h"
 #include "hashmap.hpp"
+#include "kernel_debug.cuh"
 #include "utils.hpp"
 #include <cuvs/distance/distance.hpp>
 #include <cuvs/neighbors/my_anns_v1_metrics.cuh>
@@ -86,6 +87,7 @@ RAFT_DEVICE_INLINE_FUNCTION auto team_sum(T x) -> T
 template <typename T>
 RAFT_DEVICE_INLINE_FUNCTION auto team_sum(T x, uint32_t team_size_bitshift) -> T
 {
+  if constexpr (std::is_same_v<T, float>) { DEBUG_PRINTF("team sum begin: %f\n", x); }
   switch (team_size_bitshift) {
     case 5: x += raft::shfl_xor(x, 16);
     case 4: x += raft::shfl_xor(x, 8);
@@ -93,6 +95,51 @@ RAFT_DEVICE_INLINE_FUNCTION auto team_sum(T x, uint32_t team_size_bitshift) -> T
     case 2: x += raft::shfl_xor(x, 2);
     case 1: x += raft::shfl_xor(x, 1);
     default: return x;
+  }
+}
+
+template <typename IndexT,
+          typename DistanceT,
+          typename DATASET_DESCRIPTOR_T,
+          class VisitedTable>
+RAFT_DEVICE_INLINE_FUNCTION void compute_distance_to_one_random_node_one_warp(
+  IndexT& result_index,        // [num_pickup]
+  DistanceT& result_distance,  // [num_pickup]
+  const DATASET_DESCRIPTOR_T& dataset_desc,
+  const uint32_t num_pickup,
+  const uint32_t num_distilation,
+  const uint64_t rand_xor_mask,
+  const IndexT* __restrict__ seed_ptr,  // [num_seeds]
+  const uint32_t num_seeds,
+  VisitedTable visited_table
+#ifdef _GRAPH_QUALITY_ANALYSIS
+  MyAnnsV1Metrics* __restrict__ metrics,
+  uint64_t* __restrict__ local_distance_calculation_counter1,
+  uint64_t* __restrict__ local_distance_calculation_counter2
+#endif
+)
+{
+  // Select a node randomly and compute the distance to it
+  IndexT seed_index;
+  uint32_t warp_id = threadIdx.x / warp_size + blockIdx.x * (blockDim.x / warp_size);
+  if (seed_ptr && (warp_id < num_seeds)) {
+    seed_index = seed_ptr[warp_id];
+  } else {
+    seed_index = device::xorshift64(warp_id ^ rand_xor_mask) % dataset_desc.size;
+  }
+  auto norm2             = dataset_desc.compute_distance(seed_index, true);
+  const unsigned lane_id = threadIdx.x % 32;
+  // Every lead lane inserts the result into the visited table
+  if (lane_id == 0 && visited_table.search_and_try_insert(seed_index)) {
+    // Deactivate this entry as insertion into visited hash table has failed or
+    // it has been already used by others.
+    norm2      = raft::upper_bound<DistanceT>();
+    seed_index = raft::upper_bound<IndexT>();
+  }
+  result_index    = seed_index;
+  result_distance = norm2;
+  if constexpr (std::is_same_v<DistanceT, float>) {
+    DEBUG_PRINTF("random node id: %u, distance: %f\n", result_index, result_distance);
   }
 }
 
@@ -199,6 +246,81 @@ RAFT_DEVICE_INLINE_FUNCTION void compute_distance_to_random_nodes(
 #endif
 }
 
+/**
+ * A warp computes a distance
+ */
+template <typename IndexT,
+          typename DistanceT,
+          typename DATASET_DESCRIPTOR_T,
+          typename HashtableAdditionalCondition,
+          class VisitedTable>
+RAFT_DEVICE_INLINE_FUNCTION void compute_distance_to_one_child_node_one_warp(
+  IndexT& result_child_index,
+  DistanceT& result_child_distance,
+  // [dataset_dim, dataset_size]
+  const DATASET_DESCRIPTOR_T& dataset_desc,
+  // [knn_k, dataset_size]
+  const IndexT* __restrict__ knn_graph,
+  const uint32_t knn_k,  // graph_degree
+  VisitedTable visited_table,
+  const IndexT parent_id,
+  const HashtableAdditionalCondition& hashtable_additional_condition
+#ifdef _GRAPH_QUALITY_ANALYSIS
+  ,
+  MyAnnsV1Metrics* __restrict__ metrics,
+  uint64_t* __restrict__ local_distance_calculation_counter1,
+  uint64_t* __restrict__ local_distance_calculation_counter2,
+#endif
+)
+{
+  constexpr IndexT index_msb_1_mask = utils::gen_index_msb_1_mask<IndexT>::value;
+  constexpr IndexT invalid_index    = ~static_cast<IndexT>(0);
+
+  // TODO(jiangyinzuo): add assertion
+  const uint32_t warp_id = threadIdx.x / warp_size + blockIdx.x * (blockDim.x / warp_size);
+  // NOTE: parent_id is different from smem_parent_id
+  result_child_index     = knn_graph[warp_id + (static_cast<int64_t>(knn_k) * parent_id)];
+#ifndef NDEBUG
+  if (threadIdx.x == 0 && blockIdx.x == 0) {
+    printf("parent_id: %u, result_child_index: %u\n", parent_id, result_child_index);
+    for (uint32_t i = 0; i < knn_k; ++i) {
+      printf("%u ", knn_graph[i + (static_cast<int64_t>(knn_k) * parent_id)]);
+    }
+    printf("\n");
+  }
+#endif
+
+  const unsigned lane_id = threadIdx.x % warp_size;
+  bool lead_lane         = (lane_id == 0);
+  if (lead_lane && result_child_index != invalid_index &&
+      (hashtable_additional_condition.must_visited(result_child_index) ||
+       visited_table.search_and_try_insert(result_child_index))) {
+    // Deactivate this entry as insertion into visited hash table has failed
+    // or as this has been already used by others.
+    result_child_index    = invalid_index;
+    result_child_distance = raft::upper_bound<DistanceT>();
+  }
+
+  // Compute the distance to child node
+  const auto team_size_bits   = dataset_desc.team_size_bitshift_from_smem();
+  const auto compute_distance = dataset_desc.compute_distance_impl;
+  const auto args             = dataset_desc.args.load();
+  DEBUG_PRINTF("team_size_bits: %u\n", team_size_bits);
+  // We should be calling `dataset_desc.compute_distance(..)` here as follows:
+  // > const auto child_dist = dataset_desc.compute_distance(child_id, child_id != invalid_index);
+  // Instead, we manually inline this function for performance reasons.
+  // This allows us to move the fetching of the arguments from shared memory out of the loop.
+  result_child_distance = device::team_sum((result_child_index != invalid_index)
+                                             ? compute_distance(args, result_child_index)
+                                             : (lead_lane ? raft::upper_bound<DistanceT>() : 0),
+                                           team_size_bits);
+  __syncwarp();
+  if constexpr (std::is_same_v<DistanceT, float>) {
+    DEBUG_PRINTF(
+      "team sum end, child_index=%u distance=%f\n", result_child_index, result_child_distance);
+  }
+}
+
 template <typename IndexT,
           typename DistanceT,
           typename DATASET_DESCRIPTOR_T,
@@ -240,8 +362,8 @@ RAFT_DEVICE_INLINE_FUNCTION void compute_distance_to_child_nodes(
 #ifdef _GRAPH_QUALITY_ANALYSIS
     uint64_t clk_load_gmem_graph_start = clock64();
 #endif
-    const IndexT smem_parent_id        = parent_indices[i / knn_k];
-    IndexT child_id                    = invalid_index;
+    const IndexT smem_parent_id = parent_indices[i / knn_k];
+    IndexT child_id             = invalid_index;
     if (smem_parent_id != invalid_index) {
       const auto parent_id = internal_topk_list[smem_parent_id] & ~index_msb_1_mask;
       child_id             = knn_graph[(i % knn_k) + (static_cast<int64_t>(knn_k) * parent_id)];
@@ -251,7 +373,8 @@ RAFT_DEVICE_INLINE_FUNCTION void compute_distance_to_child_nodes(
     uint64_t clk_insert_hashmap_start = clock64();
 #endif
     if (child_id != invalid_index) {
-      if (hashtable_additional_condition.must_visited(child_id) || visited_table.search_and_try_insert(child_id)) {
+      if (hashtable_additional_condition.must_visited(child_id) ||
+          visited_table.search_and_try_insert(child_id)) {
         // Deactivate this entry as insertion into visited hash table has failed
         // or as this has been already used by others.
         child_id = invalid_index;

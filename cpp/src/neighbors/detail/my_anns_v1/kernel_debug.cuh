@@ -15,10 +15,12 @@
  */
 #pragma once
 
+#include <cstdint>
+#include <cstdio>
 #include <cuda_fp16.h>
 #ifndef NDEBUG
 #define DEBUG_PRINTF(str, ...)                                     \
-  if (threadIdx.x == 0 && blockIdx.x == 0 && blockIdx.y == 1) {    \
+  if (threadIdx.x == 0 && blockIdx.x == 0 && blockIdx.y == 0) {    \
     printf("%s:%d: " str "\n", __FILE__, __LINE__, ##__VA_ARGS__); \
   }
 

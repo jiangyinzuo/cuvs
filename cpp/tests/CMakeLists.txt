@@ -188,11 +188,17 @@ if(BUILD_TESTS)
   )
 
   ConfigureTest(
-      NAME NEIGHBORS_ANN_MY_ANNS_V1_GEMM_PRECOMPUTE_NORM_TEST PATH neighbors/ann_my_anns_v1/gemm_precompute_norm.cu GPUS 1 PERCENT 100
+      NAME NEIGHBORS_ANN_MY_ANNS_V1_TEST PATH neighbors/ann_my_anns_v1/anns.cu GPUS 1 PERCENT 100
   )
+
   set_source_files_properties(${compute_distance_sources}
-        src/neighbors/gemm_precompute_norm.cu
+      src/neighbors/anns.cu
       PROPERTIES COMPILE_OPTIONS "-O0;-g;-G;-maxrregcount=255")
+
+  ConfigureTest(
+      NAME NEIGHBORS_ANN_MY_ANNS_V1_VISITED_TABLE_TEST PATH neighbors/ann_my_anns_v1/visited_table.cu GPUS 1 PERCENT 100
+  )
+
 
   ConfigureTest(
     NAME
