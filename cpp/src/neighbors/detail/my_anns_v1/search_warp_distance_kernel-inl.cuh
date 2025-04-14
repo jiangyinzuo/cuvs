@@ -637,6 +637,7 @@ void select_and_run(const dataset_descriptor_host<DataT, IndexT, DistanceT>& dat
                   stream);
 
   RAFT_EXPECTS(block_size % warp_size() == 0, "block_size must be a multiple of warp size");
+  RAFT_EXPECTS(block_size > 32, "block must has more than 1 warp");
   RAFT_EXPECTS(graph.extent(1) % (block_size / 32) == 0,
                "graph.extent(1) must be a multiple of block_size / 32");
 
