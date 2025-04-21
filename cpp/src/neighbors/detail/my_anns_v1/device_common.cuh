@@ -281,7 +281,7 @@ RAFT_DEVICE_INLINE_FUNCTION void compute_distance_to_one_child_node_one_warp(
   // NOTE: parent_id is different from smem_parent_id
   result_child_index     = knn_graph[warp_id + (static_cast<int64_t>(knn_k) * parent_id)];
 #ifndef NDEBUG
-  if (threadIdx.x == 0 && blockIdx.x == 0) {
+  if (threadIdx.x == 0 && blockIdx.x == PRINT_BLOCK_IDX_X) {
     printf("parent_id: %u, result_child_index: %u\n", parent_id, result_child_index);
     for (uint32_t i = 0; i < knn_k; ++i) {
       printf("%u ", knn_graph[i + (static_cast<int64_t>(knn_k) * parent_id)]);

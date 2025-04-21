@@ -21,6 +21,7 @@
 #include "search_multi_kernel.cuh"
 #include "search_plan.cuh"
 #include "search_single_cta.cuh"
+#include "search_single_neighbor_list_multi_cta_v2.cuh"
 #include "search_warp_distance.cuh"
 
 #include <cuvs/neighbors/common.hpp>
@@ -63,9 +64,13 @@ class factory {
       return std::make_unique<
         multi_cta_search::search<DataT, IndexT, DistanceT, my_anns_v1SampleFilterT>>(
         res, plan, dataset_desc, plan.dim, plan.dataset_size, plan.graph_degree, plan.topk);
-    } else if (plan.algo == search_algo::WARP_DISTANCE) {
+    } else if (plan.algo == search_algo::SINGLE_NEIGHBOR_LIST_MULTI_CTA_V1) {
       return std::make_unique<
         warp_distance_search::search<DataT, IndexT, DistanceT, my_anns_v1SampleFilterT>>(
+        res, plan, dataset_desc, plan.dim, plan.dataset_size, plan.graph_degree, plan.topk);
+    } else if (plan.algo == search_algo::SINGLE_NEIGHBOR_LIST_MULTI_CTA_V2) {
+      return std::make_unique<single_neighbor_list_multi_cta_v2_search ::
+                                search<DataT, IndexT, DistanceT, my_anns_v1SampleFilterT>>(
         res, plan, dataset_desc, plan.dim, plan.dataset_size, plan.graph_degree, plan.topk);
     } else {
       return std::make_unique<

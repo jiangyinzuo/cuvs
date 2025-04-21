@@ -396,7 +396,19 @@ if(BUILD_SHARED_LIBS)
     src/neighbors/detail/my_anns_v1/search_warp_distance_half_uint32.cu
     src/neighbors/detail/my_anns_v1/search_warp_distance_int8_uint32.cu
     src/neighbors/detail/my_anns_v1/search_warp_distance_uint8_uint32.cu
-  )
+    src/neighbors/detail/my_anns_v1/search_single_neighbor_list_multi_cta_v2_float_uint32_compute_random_always_unvisited.cu
+    src/neighbors/detail/my_anns_v1/search_single_neighbor_list_multi_cta_v2_float_uint32_compute_random_cache.cu
+    src/neighbors/detail/my_anns_v1/search_single_neighbor_list_multi_cta_v2_float_uint32_compute_random_single_mem_hash.cu
+    src/neighbors/detail/my_anns_v1/search_single_neighbor_list_multi_cta_v2_half_uint32_compute_random_always_unvisited.cu
+    src/neighbors/detail/my_anns_v1/search_single_neighbor_list_multi_cta_v2_half_uint32_compute_random_cache.cu
+    src/neighbors/detail/my_anns_v1/search_single_neighbor_list_multi_cta_v2_half_uint32_compute_random_single_mem_hash.cu
+    src/neighbors/detail/my_anns_v1/search_single_neighbor_list_multi_cta_v2_int8_uint32_compute_random_always_unvisited.cu
+    src/neighbors/detail/my_anns_v1/search_single_neighbor_list_multi_cta_v2_int8_uint32_compute_random_cache.cu
+    src/neighbors/detail/my_anns_v1/search_single_neighbor_list_multi_cta_v2_int8_uint32_compute_random_single_mem_hash.cu
+    src/neighbors/detail/my_anns_v1/search_single_neighbor_list_multi_cta_v2_uint8_uint32_compute_random_always_unvisited.cu
+    src/neighbors/detail/my_anns_v1/search_single_neighbor_list_multi_cta_v2_uint8_uint32_compute_random_cache.cu
+    src/neighbors/detail/my_anns_v1/search_single_neighbor_list_multi_cta_v2_uint8_uint32_compute_random_single_mem_hash.cu
+    )
 
     file(GLOB_RECURSE compute_distance_sources "src/neighbors/detail/my_anns_v1/compute_distance_*.cu")
     set_source_files_properties(${compute_distance_sources} PROPERTIES COMPILE_FLAGS -maxrregcount=64)

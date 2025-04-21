@@ -168,8 +168,8 @@ enum class search_algo {
   /** For small batch sizes. */
   MULTI_CTA,
   MULTI_KERNEL,
-  /** For single query */
-  WARP_DISTANCE,
+  SINGLE_NEIGHBOR_LIST_MULTI_CTA_V1,
+  SINGLE_NEIGHBOR_LIST_MULTI_CTA_V2,
   AUTO
 };
 

@@ -20,6 +20,61 @@
 namespace cuvs::neighbors::my_anns_v1::detail {
 
 template <typename IndexT>
+class ComputeRandomEntryPointsOneWarp {
+ public:
+  ComputeRandomEntryPointsOneWarp(const IndexT* dev_seed_ptr,
+                                  uint32_t num_seeds,
+                                  uint32_t num_random_samplings,
+                                  uint64_t rand_xor_mask)
+    : dev_seed_ptr(dev_seed_ptr),
+      num_seeds(num_seeds),
+      num_random_samplings(num_random_samplings),
+      rand_xor_mask(rand_xor_mask)
+  {
+  }
+
+  template <typename DistanceT, class DATASET_DESCRIPTOR_T, class VisitedTable>
+  __device__ __forceinline__ void operator()(IndexT& warp_result_index,
+                                             DistanceT& warp_result_distance,
+                                             const DATASET_DESCRIPTOR_T* dataset_desc,
+                                             const uint32_t graph_degree,
+                                             VisitedTable visited_table
+#ifdef _GRAPH_QUALITY_ANALYSIS
+                                             ,
+                                             MyAnnsV1Metrics* my_anns_v1_metrics,
+                                             uint64_t* local_distance_calculation_counter1,
+                                             uint64_t* local_distance_calculation_counter2
+#endif
+  ) const
+  {
+    device::compute_distance_to_one_random_node_one_warp(warp_result_index,
+                                                         warp_result_distance,
+                                                         *dataset_desc,
+                                                         graph_degree,
+                                                         num_random_samplings,
+                                                         rand_xor_mask,
+                                                         dev_seed_ptr,
+                                                         num_seeds,
+                                                         visited_table
+#ifdef _GRAPH_QUALITY_ANALYSIS
+                                                         ,
+                                                         my_anns_v1_metrics,
+                                                         &local_distance_calculation_counter1,
+                                                         &local_distance_calculation_counter2
+#endif
+    );
+  }
+
+  __device__ __forceinline__ bool must_visited(IndexT vector_id) const { return false; }
+
+ private:
+  const IndexT* dev_seed_ptr;  // [num_queries, num_seeds]
+  uint32_t num_seeds;
+  uint32_t num_random_samplings;
+  uint64_t rand_xor_mask;
+};
+
+template <typename IndexT>
 class ComputeRandomEntryPoints {
  public:
   ComputeRandomEntryPoints(const IndexT* dev_seed_ptr,

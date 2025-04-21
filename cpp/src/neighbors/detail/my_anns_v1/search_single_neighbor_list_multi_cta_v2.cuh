@@ -1,0 +1,396 @@
+/*
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+#pragma once
+
+#include "entry_points_policy.cuh"
+#include "hashmap.hpp"
+#include "search_plan.cuh"
+#include "search_single_neighbor_list_multi_cta_v2_kernel.cuh"
+#include "topk_by_radix.cuh"
+#include "visited_table.cuh"
+
+#include <raft/core/device_mdspan.hpp>
+#include <raft/core/logger.hpp>
+#include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/device_properties.hpp>
+#include <raft/core/resources.hpp>
+
+// TODO: This shouldn't be invoking anything from spatial/knn
+#include "../ann_utils.cuh"
+
+#include <raft/util/cuda_rt_essentials.hpp>
+#include <raft/util/cudart_utils.hpp>  // RAFT_CUDA_TRY_NOT_THROW is used TODO(tfeher): consider moving this to cuda_rt_essentials.hpp
+
+#include <algorithm>
+#include <cassert>
+#include <iostream>
+#include <memory>
+#include <numeric>
+#include <vector>
+
+namespace cuvs::neighbors::my_anns_v1::detail {
+namespace single_neighbor_list_multi_cta_v2_search {
+
+template <typename DataT, typename IndexT, typename DistanceT, typename SAMPLE_FILTER_T>
+struct search : search_plan_impl<DataT, IndexT, DistanceT, SAMPLE_FILTER_T> {
+  using base_type  = search_plan_impl<DataT, IndexT, DistanceT, SAMPLE_FILTER_T>;
+  using DATA_T     = typename base_type::DATA_T;
+  using INDEX_T    = typename base_type::INDEX_T;
+  using DISTANCE_T = typename base_type::DISTANCE_T;
+
+  using base_type::algo;
+  using base_type::hashmap_max_fill_rate;
+  using base_type::hashmap_min_bitlen;
+  using base_type::hashmap_mode;
+  using base_type::itopk_size;
+  using base_type::max_iterations;
+  using base_type::max_queries;
+  using base_type::min_iterations;
+  using base_type::num_entry_points;
+  using base_type::num_random_samplings;
+  using base_type::rand_xor_mask;
+  using base_type::search_width;
+  using base_type::team_size;
+  using base_type::thread_block_size;
+
+  using base_type::dim;
+  using base_type::graph_degree;
+  using base_type::topk;
+
+  using base_type::hash_bitlen;
+
+  using base_type::dataset_size;
+  using base_type::hashmap_size;
+  using base_type::result_buffer_size;
+  using base_type::small_hash_bitlen;
+  using base_type::small_hash_reset_interval;
+
+  using base_type::smem_size;
+
+  using base_type::dataset_desc;
+  using base_type::dev_seed;
+  using base_type::hashmap;
+  using base_type::my_anns_v1_metrics;
+  using base_type::num_executed_iterations;
+  using base_type::num_seeds;
+
+  uint32_t num_itopk_candidates;
+
+  // The topk distance value of cluster(list) and queries
+  lightweight_uvector<DistanceT> coarse_distances_dev;
+  // The topk  index of cluster(list) and queries
+  lightweight_uvector<IndexT> coarse_indices_dev;
+
+  lightweight_uvector<IndexT> candidate_indices_buffer;
+  lightweight_uvector<DistanceT> candidate_distances_buffer;
+
+  search(raft::resources const& res,
+         search_params params,
+         const dataset_descriptor_host<DataT, IndexT, DistanceT>& dataset_desc,
+         int64_t dim,
+         int64_t dataset_size,
+         int64_t graph_degree,
+         uint32_t topk)
+    : base_type(res, params, dataset_desc, dim, dataset_size, graph_degree, topk),
+      coarse_distances_dev(res),
+      coarse_indices_dev(res),
+      candidate_indices_buffer(res),
+      candidate_distances_buffer(res)
+  {
+    set_params(res);
+  }
+
+  ~search() {}
+
+  inline void set_params(raft::resources const& res)
+  {
+    num_itopk_candidates = search_width * graph_degree;
+    result_buffer_size   = itopk_size + num_itopk_candidates;
+
+    typedef raft::Pow2<32> AlignBytes;
+    unsigned result_buffer_size_32 = AlignBytes::roundUp(result_buffer_size);
+
+    constexpr unsigned max_itopk = 512;
+    RAFT_EXPECTS(itopk_size <= max_itopk, "itopk_size cannot be larger than %u", max_itopk);
+
+    RAFT_LOG_DEBUG("# num_itopk_candidates: %u", num_itopk_candidates);
+    RAFT_LOG_DEBUG("# num_itopk: %lu", itopk_size);
+    //
+    // Determine the thread block size
+    //
+    constexpr unsigned min_block_size       = 64;  // 32 or 64
+    constexpr unsigned min_block_size_radix = 256;
+    constexpr unsigned max_block_size       = 1024;
+    //
+    const std::uint32_t topk_ws_size = 3;
+    const std::uint32_t base_smem_size =
+      dataset_desc.smem_ws_size_in_bytes +
+      (sizeof(INDEX_T) + sizeof(DISTANCE_T)) * result_buffer_size_32 +
+      sizeof(INDEX_T) * hashmap::get_size(small_hash_bitlen) + sizeof(INDEX_T) * search_width +
+      sizeof(std::uint32_t) * topk_ws_size + sizeof(std::uint32_t);
+
+    std::uint32_t additional_smem_size = 0;
+    if (num_itopk_candidates > 256) {
+      // Tentatively calculate the required share memory size when radix
+      // sort based topk is used, assuming the block size is the maximum.
+      if (itopk_size <= 256) {
+        additional_smem_size +=
+          single_cta_search::topk_by_radix_sort<256, INDEX_T>::smem_size * sizeof(std::uint32_t);
+      } else {
+        additional_smem_size +=
+          single_cta_search::topk_by_radix_sort<512, INDEX_T>::smem_size * sizeof(std::uint32_t);
+      }
+    }
+
+    if (!std::is_same_v<SAMPLE_FILTER_T, cuvs::neighbors::filtering::none_sample_filter>) {
+      // For filtering postprocess
+      using scan_op_t = cub::WarpScan<unsigned>;
+      additional_smem_size =
+        std::max<std::uint32_t>(additional_smem_size, sizeof(scan_op_t::TempStorage));
+    }
+
+    smem_size = base_smem_size + additional_smem_size;
+
+    uint32_t block_size = thread_block_size;
+    if (block_size == 0) {
+      block_size = min_block_size;
+
+      if (num_itopk_candidates > 256) {
+        // radix-based topk is used.
+        block_size = min_block_size_radix;
+
+        // Internal topk values per thread must be equlal to or less than 4
+        // when radix-sort block_topk is used.
+        while ((block_size < max_block_size) && (max_itopk / block_size > 4)) {
+          block_size *= 2;
+        }
+      }
+
+      // Increase block size according to shared memory requirements.
+      // If block size is 32, upper limit of shared memory size per
+      // thread block is set to 4096. This is GPU generation dependent.
+      constexpr unsigned ulimit_smem_size_cta32 = 4096;
+      while (smem_size > ulimit_smem_size_cta32 / 32 * block_size) {
+        block_size *= 2;
+      }
+
+      // Increase block size to improve GPU occupancy when batch size
+      // is small, that is, number of queries is low.
+      cudaDeviceProp deviceProp = raft::resource::get_device_properties(res);
+      RAFT_LOG_DEBUG("# multiProcessorCount: %d", deviceProp.multiProcessorCount);
+      while ((block_size < max_block_size) &&
+             (graph_degree * search_width * team_size >= block_size * 2) &&
+             (max_queries <= (1024 / (block_size * 2)) * deviceProp.multiProcessorCount)) {
+        block_size *= 2;
+      }
+    }
+    RAFT_LOG_DEBUG("# thread_block_size: %u", block_size);
+    RAFT_EXPECTS(block_size >= min_block_size,
+                 "block_size cannot be smaller than min_block size, %u",
+                 min_block_size);
+    RAFT_EXPECTS(block_size <= max_block_size,
+                 "block_size cannot be larger than max_block size %u",
+                 max_block_size);
+    thread_block_size = block_size;
+
+    if (num_itopk_candidates <= 256) {
+      RAFT_LOG_DEBUG("# bitonic-sort based topk routine is used");
+    } else {
+      RAFT_LOG_DEBUG("# radix-sort based topk routine is used");
+      smem_size = base_smem_size;
+      if (itopk_size <= 256) {
+        constexpr unsigned MAX_ITOPK = 256;
+        smem_size += single_cta_search::topk_by_radix_sort<MAX_ITOPK, INDEX_T>::smem_size *
+                     sizeof(std::uint32_t);
+      } else {
+        constexpr unsigned MAX_ITOPK = 512;
+        smem_size += single_cta_search::topk_by_radix_sort<MAX_ITOPK, INDEX_T>::smem_size *
+                     sizeof(std::uint32_t);
+      }
+    }
+    RAFT_LOG_DEBUG("# smem_size: %u", smem_size);
+    hashmap_size = 0;
+    if (small_hash_bitlen == 0 && !this->persistent) {
+      hashmap_size = max_queries * hashmap::get_size(hash_bitlen);
+      hashmap.resize(hashmap_size, raft::resource::get_cuda_stream(res));
+    }
+    RAFT_LOG_DEBUG("# hashmap_size: %lu", hashmap_size);
+
+    candidate_indices_buffer.resize(graph_degree, raft::resource::get_cuda_stream(res));
+    candidate_distances_buffer.resize(graph_degree, raft::resource::get_cuda_stream(res));
+  }
+
+  void operator()(
+    raft::resources const& res,
+    const index<DATA_T, INDEX_T>& index,  // used for entry points GEMM distance computation
+    raft::device_matrix_view<const INDEX_T, int64_t, raft::row_major> graph,
+    INDEX_T* const result_indices_ptr,       // [num_queries, topk]
+    DISTANCE_T* const result_distances_ptr,  // [num_queries, topk]
+    const DATA_T* const queries_ptr,         // [num_queries, dataset_dim]
+    const std::uint32_t num_queries,
+    const INDEX_T* dev_seed_ptr,                   // [num_queries, num_seeds]
+    std::uint32_t* const num_executed_iterations,  // [num_queries]
+    uint32_t topk,
+    SAMPLE_FILTER_T sample_filter) override
+  {
+    auto stream = raft::resource::get_cuda_stream(res);
+    const ComputeRandomEntryPointsOneWarp<IndexT> compute_random_entry_points(
+      dev_seed_ptr, num_seeds, num_random_samplings, rand_xor_mask);
+    if (this->num_entry_points == 0) {
+      select_entry_points_policy_and_run(stream,
+                                         graph,
+                                         result_indices_ptr,
+                                         result_distances_ptr,
+                                         queries_ptr,
+                                         num_queries,
+                                         num_executed_iterations,
+                                         topk,
+                                         sample_filter,
+                                         compute_random_entry_points);
+    } else {
+      RAFT_LOG_ERROR("single neighbor list multi CTA search does not support num entry points > 0");
+    }
+
+#ifdef _GRAPH_QUALITY_ANALYSIS
+    uint32_t* my_num_executed_iterations_host = new uint32_t[num_queries];
+    raft::update_host(
+      my_num_executed_iterations_host, num_executed_iterations, num_queries, stream);
+    // copy the metrics back to host
+    MyAnnsV1Metrics my_anns_v1_metrics_host;
+    raft::update_host(&my_anns_v1_metrics_host, my_anns_v1_metrics.data(), 1, stream);
+    // sync the cuda_stream
+    raft::resource::sync_stream(res, stream);
+    // uint32_t* num_executed_iterations_host = new uint32_t[num_queries];
+    // raft::update_host(num_executed_iterations_host, num_executed_iterations, num_queries,
+    // stream);
+    MyAnnsV1MetricsAccumulator::get_instance().accumulate(my_anns_v1_metrics_host,
+                                                          my_num_executed_iterations_host,
+                                                          num_queries,
+                                                          MyAnnsV1KernelType::kSingleCta);
+    MyAnnsV1MetricsAccumulator::get_instance().metrics.param_min_iterations    = min_iterations;
+    MyAnnsV1MetricsAccumulator::get_instance().metrics.param_max_iterations    = max_iterations;
+    MyAnnsV1MetricsAccumulator::get_instance().metrics.param_hash_bitlen       = hash_bitlen;
+    MyAnnsV1MetricsAccumulator::get_instance().metrics.param_small_hash_bitlen = small_hash_bitlen;
+    MyAnnsV1MetricsAccumulator::get_instance().metrics.param_small_hash_reset_interval =
+      small_hash_reset_interval;
+#endif
+  }
+
+ private:
+  template <typename EntryPointsPolicy>
+  void select_entry_points_policy_and_run(
+    rmm::cuda_stream_view stream,
+    raft::device_matrix_view<const INDEX_T, int64_t, raft::row_major> graph,
+    INDEX_T* const result_indices_ptr,       // [num_queries, topk]
+    DISTANCE_T* const result_distances_ptr,  // [num_queries, topk]
+    const DATA_T* const queries_ptr,         // [num_queries, dataset_dim]
+    const std::uint32_t num_queries,
+    std::uint32_t* const num_executed_iterations,  // [num_queries]
+    uint32_t topk,
+    SAMPLE_FILTER_T sample_filter,
+    EntryPointsPolicy& entry_points_policy)
+  {
+    switch (hashmap_mode) {
+      case hash_mode::CACHE: {
+        visited_table::Cache<INDEX_T> visited_table{nullptr, (uint32_t)small_hash_bitlen};
+        select_and_run(dataset_desc,
+                       graph,
+                       result_indices_ptr,
+                       result_distances_ptr,
+                       queries_ptr,
+                       candidate_distances_buffer.data(),
+                       candidate_indices_buffer.data(),
+                       num_queries,
+                       num_executed_iterations,
+                       *this,
+                       topk,
+                       num_itopk_candidates,
+                       static_cast<uint32_t>(thread_block_size),
+                       smem_size,
+                       sample_filter,
+                       entry_points_policy,
+                       visited_table,
+#ifdef _GRAPH_QUALITY_ANALYSIS
+                       my_anns_v1_metrics.data(),
+#endif
+                       stream);
+        break;
+      }
+      case hash_mode::ALWAYS_UNVISITED: {
+        visited_table::AlwaysUnvisited<INDEX_T> visited_table;
+        select_and_run(dataset_desc,
+                       graph,
+                       result_indices_ptr,
+                       result_distances_ptr,
+                       queries_ptr,
+                       candidate_distances_buffer.data(),
+                       candidate_indices_buffer.data(),
+                       num_queries,
+                       num_executed_iterations,
+                       *this,
+                       topk,
+                       num_itopk_candidates,
+                       static_cast<uint32_t>(thread_block_size),
+                       smem_size,
+                       sample_filter,
+                       entry_points_policy,
+                       visited_table,
+#ifdef _GRAPH_QUALITY_ANALYSIS
+                       my_anns_v1_metrics.data(),
+#endif
+                       stream);
+        break;
+      }
+      default:
+        // cagra
+        const auto small_hash_size = hashmap::get_size(small_hash_bitlen);
+        visited_table::SingleMemHashtable<INDEX_T> visited_table;
+        if (small_hash_bitlen) {
+          // use shared memory
+          visited_table = visited_table::SingleMemHashtable<IndexT>{
+            nullptr, (uint32_t)small_hash_bitlen, (uint32_t)small_hash_reset_interval};
+        } else {
+          // use global memory
+          visited_table = visited_table::SingleMemHashtable<IndexT>{
+            hashmap.data(), (uint32_t)hash_bitlen, (uint32_t)small_hash_reset_interval};
+        }
+        select_and_run(dataset_desc,
+                       graph,
+                       result_indices_ptr,
+                       result_distances_ptr,
+                       queries_ptr,
+                       candidate_distances_buffer.data(),
+                       candidate_indices_buffer.data(),
+                       num_queries,
+                       num_executed_iterations,
+                       *this,
+                       topk,
+                       num_itopk_candidates,
+                       static_cast<uint32_t>(thread_block_size),
+                       smem_size,
+                       sample_filter,
+                       entry_points_policy,
+                       visited_table,
+#ifdef _GRAPH_QUALITY_ANALYSIS
+                       my_anns_v1_metrics.data(),
+#endif
+                       stream);
+    }
+  }
+};
+
+}  // namespace single_neighbor_list_multi_cta_v2_search
+}  // namespace cuvs::neighbors::my_anns_v1::detail

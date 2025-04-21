@@ -53,6 +53,8 @@
 #include <numeric>
 #include <vector>
 
+#include <cooperative_groups.h>
+
 namespace cuvs::neighbors::my_anns_v1::detail {
 namespace warp_distance_search {
 
@@ -93,7 +95,8 @@ RAFT_DEVICE_INLINE_FUNCTION void pickup_next_parent(
       int flag_done = 0;
       if (is_candidate && candidate_id == k) {
         is_candidate = 0;
-        if (hashmap::insert<INDEX_T, 1>(hash_ptr, hash_bitlen, index)) {
+        // 
+        if (hashmap::search_and_insert<INDEX_T, 1>(hash_ptr, hash_bitlen, index)) {
           // Use this candidate as next parent
           index |= index_msb_1_mask;  // set most significant bit as used node
           if (i < itopk_size) {
@@ -158,46 +161,6 @@ RAFT_DEVICE_INLINE_FUNCTION void topk_by_bitonic_sort(float* distances,  // [num
 }
 
 // #undef NDEBUG
-
-template <typename INDEX_T, typename DISTANCE_T>
-__device__ void print_result_buffer(uint32_t topk,
-                                    const INDEX_T* result_indices_ptr,
-                                    const DISTANCE_T* result_distances_ptr,
-                                    const char* file,
-                                    const unsigned line,
-                                    uint32_t iter)
-{
-#ifndef NDEBUG
-  constexpr INDEX_T invalid_index    = ~static_cast<INDEX_T>(0);
-  constexpr INDEX_T index_msb_1_mask = utils::gen_index_msb_1_mask<INDEX_T>::value;
-  if (blockIdx.x == 0 && threadIdx.x == 0 && std::is_same_v<float, DISTANCE_T> &&
-      result_distances_ptr != nullptr) {
-    printf("%s:%u iter=%u", file, line, iter);
-    for (std::uint32_t i = 0; i < topk; ++i) {
-      if (i % 16 == 0) { printf("\n"); }
-      if (result_indices_ptr[i] == invalid_index) {
-        printf("         ? ");
-      } else {
-        if (result_indices_ptr[i] & index_msb_1_mask) {
-          printf("!%9u ", result_indices_ptr[i] & ~index_msb_1_mask);
-        } else {
-          printf("%10u ", result_indices_ptr[i] & ~index_msb_1_mask);
-        }
-      }
-    }
-    printf("\ndistance:");
-    for (std::uint32_t i = 0; i < topk; ++i) {
-      if (i % 16 == 0) { printf("\n"); }
-      if (result_indices_ptr[i] == invalid_index) {
-        printf("         ? ");
-      } else {
-        printf("%10f ", result_distances_ptr[i]);
-      }
-    }
-    printf("\n");
-  }
-#endif
-}
 
 //
 // a warp for a distance computation
@@ -334,6 +297,9 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
   print_result_buffer(
     result_buffer_size_32, result_indices_buffer, result_distances_buffer, __FILE__, __LINE__, 0);
 
+  cooperative_groups::grid_group grid = cooperative_groups::this_grid();
+  grid.sync();
+
   uint32_t iter = 0;
   while (1) {
     DEBUG_PRINTF("iter %u", iter);
@@ -344,7 +310,7 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
       candidate_indices_buffer[warp_id]   = warp_result_index;
     }
 
-    __syncthreads();
+    grid.sync();
 
     // load candidate_distances_buffer and candidate_indice_buffer to shared memory
     for (unsigned i = threadIdx.x; i < graph_degree; i += blockDim.x) {
@@ -654,30 +620,58 @@ void select_and_run(const dataset_descriptor_host<DataT, IndexT, DistanceT>& dat
     .gmem_table  = traversed_hashmap_ptr,
     .gmem_bitlen = (uint32_t)traversed_hash_bitlen};
 
-  kernel<<<grid_dims, block_dims, smem_size, stream>>>(topk_indices_ptr,
-                                                       topk_distances_ptr,
-                                                       topk,
-                                                       dataset_desc.dev_ptr(stream),
-                                                       queries_ptr,
-                                                       graph.data_handle(),
-                                                       graph.extent(1),
-                                                       candidate_distances_buffer,
-                                                       candidate_indices_buffer,
-                                                       ps.num_random_samplings,
-                                                       ps.rand_xor_mask,
-                                                       dev_seed_ptr,
-                                                       num_seeds,
-                                                       ps.itopk_size,
-                                                       ps.min_iterations,
-                                                       ps.max_iterations,
-                                                       num_executed_iterations,
-                                                       sample_filter,
-                                                       visited_table
+  auto graph_degree = graph.extent(1);
+  auto* dataset_ptr = dataset_desc.dev_ptr(stream);
+  auto* graph_ptr   = graph.data_handle();
+  void* args[]      = {(void*)&topk_indices_ptr,
+                       (void*)&topk_distances_ptr,
+                       (void*)&topk,
+                       (void*)&dataset_ptr,
+                       (void*)&queries_ptr,
+                       (void*)&graph_ptr,
+                       (void*)&graph_degree,
+                       (void*)&candidate_distances_buffer,
+                       (void*)&candidate_indices_buffer,
+                       (void*)&ps.num_random_samplings,
+                       (void*)&ps.rand_xor_mask,
+                       (void*)&dev_seed_ptr,
+                       (void*)&num_seeds,
+                       (void*)&ps.itopk_size,
+                       (void*)&ps.min_iterations,
+                       (void*)&ps.max_iterations,
+                       (void*)&num_executed_iterations,
+                       (void*)&sample_filter,
+                       (void*)&visited_table
 #ifdef _GRAPH_QUALITY_ANALYSIS
-                                                       ,
-                                                       my_anns_v1_metrics
+                  ,
+                  (void*)&my_anns_v1_metrics
 #endif
-  );
+  };
+  cudaLaunchCooperativeKernel((void*)kernel, grid_dims, block_dims, args, smem_size, stream);
+  //   kernel<<<grid_dims, block_dims, smem_size, stream>>>(topk_indices_ptr,
+  //                                                        topk_distances_ptr,
+  //                                                        topk,
+  //                                                        dataset_desc.dev_ptr(stream),
+  //                                                        queries_ptr,
+  //                                                        graph.data_handle(),
+  //                                                        graph.extent(1),
+  //                                                        candidate_distances_buffer,
+  //                                                        candidate_indices_buffer,
+  //                                                        ps.num_random_samplings,
+  //                                                        ps.rand_xor_mask,
+  //                                                        dev_seed_ptr,
+  //                                                        num_seeds,
+  //                                                        ps.itopk_size,
+  //                                                        ps.min_iterations,
+  //                                                        ps.max_iterations,
+  //                                                        num_executed_iterations,
+  //                                                        sample_filter,
+  //                                                        visited_table
+  // #ifdef _GRAPH_QUALITY_ANALYSIS
+  //                                                        ,
+  //                                                        my_anns_v1_metrics
+  // #endif
+  //   );
   // #ifdef _GRAPH_QUALITY_ANALYSIS
   //   printf("GRAPH: my_anns_v1-multi-cta, file: %s, line: %d, num_queries: %u\n",
   //          __FILE__,

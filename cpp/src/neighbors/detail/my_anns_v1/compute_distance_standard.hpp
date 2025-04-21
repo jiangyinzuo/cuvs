@@ -63,7 +63,8 @@ struct standard_descriptor_spec : public instance_spec<DataT, IndexT, DistanceT>
     if (params.team_size != 0 && TeamSize != params.team_size) { return -1.0; }
     if (Metric != metric) { return -1.0; }
     // a warp compute a distance, so team size must be a multiple of warp size
-    if (params.algo == search_algo::WARP_DISTANCE) {
+    if (params.algo == search_algo::SINGLE_NEIGHBOR_LIST_MULTI_CTA_V1 ||
+        params.algo == search_algo::SINGLE_NEIGHBOR_LIST_MULTI_CTA_V2) {
       if (TeamSize != 32) { return -1.0; }
     }
     // Otherwise, favor the closest dataset dimensionality.

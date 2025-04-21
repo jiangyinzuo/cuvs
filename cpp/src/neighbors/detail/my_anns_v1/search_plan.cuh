@@ -126,7 +126,7 @@ struct search_plan_impl_base : public search_params {
         algo = search_algo::SINGLE_CTA;
         RAFT_LOG_DEBUG("Auto strategy: selecting single-cta");
       } else if (search_params::max_queries == 1) {
-        algo = search_algo::WARP_DISTANCE;
+        algo = search_algo::SINGLE_NEIGHBOR_LIST_MULTI_CTA_V2;
         RAFT_LOG_DEBUG("Auto strategy: selecting warp-distance");
       } else {
         algo = search_algo::MULTI_CTA;
@@ -202,7 +202,8 @@ struct search_plan_impl : public search_plan_impl_base {
   {
     uint32_t _max_iterations = max_iterations;
     if (max_iterations == 0) {
-      if (algo == search_algo::MULTI_CTA || algo == search_algo::WARP_DISTANCE) {
+      if (algo == search_algo::MULTI_CTA ||
+          algo == search_algo::SINGLE_NEIGHBOR_LIST_MULTI_CTA_V1) {
         constexpr uint32_t mc_itopk_size   = 32;
         constexpr uint32_t mc_search_width = 1;
         _max_iterations                    = mc_itopk_size / mc_search_width;
@@ -221,7 +222,8 @@ struct search_plan_impl : public search_plan_impl_base {
         "# max_iterations is increased from %lu to %u.", max_iterations, _max_iterations);
       max_iterations = _max_iterations;
     }
-    if ((algo == search_algo::MULTI_CTA || algo == search_algo::WARP_DISTANCE) &&
+    if ((algo == search_algo::MULTI_CTA ||
+         algo == search_algo::SINGLE_NEIGHBOR_LIST_MULTI_CTA_V1) &&
         (0.0 < filtering_rate && filtering_rate < 1.0)) {
       size_t adjusted_itopk_size =
         (size_t)((float)topk / (1.0 - filtering_rate) +
@@ -256,7 +258,7 @@ struct search_plan_impl : public search_plan_impl_base {
     small_hash_bitlen         = 0;
     small_hash_reset_interval = 1024 * 1024;
     float max_fill_rate       = hashmap_max_fill_rate;
-    if (algo == search_algo::MULTI_CTA || algo == search_algo::WARP_DISTANCE) {
+    if (algo == search_algo::MULTI_CTA || algo == search_algo::SINGLE_NEIGHBOR_LIST_MULTI_CTA_V1) {
       const uint32_t mc_itopk_size = 32;
       const uint32_t mc_num_cta_per_query =
         max(search_width, raft::ceildiv(itopk_size, (size_t)mc_itopk_size));
@@ -388,14 +390,16 @@ struct search_plan_impl : public search_plan_impl_base {
 
     if (itopk_size > 1024) {
       if ((algo == search_algo::MULTI_CTA) || (algo == search_algo::MULTI_KERNEL) ||
-          (algo == search_algo::WARP_DISTANCE)) {
+          (algo == search_algo::SINGLE_NEIGHBOR_LIST_MULTI_CTA_V1)) {
       } else {
         error_message += std::string("- `internal_topk` (" + std::to_string(itopk_size) +
                                      ") must be smaller or equal to 1024");
       }
     }
     if (algo != search_algo::SINGLE_CTA && algo != search_algo::MULTI_CTA &&
-        algo != search_algo::MULTI_KERNEL && algo != search_algo::WARP_DISTANCE) {
+        algo != search_algo::MULTI_KERNEL &&
+        algo != search_algo::SINGLE_NEIGHBOR_LIST_MULTI_CTA_V1 &&
+        algo != search_algo::SINGLE_NEIGHBOR_LIST_MULTI_CTA_V2) {
       error_message += "An invalid kernel mode has been given: " + std::to_string((int)algo) + "";
     }
     if (thread_block_size != 0 && thread_block_size != 64 && thread_block_size != 128 &&
@@ -426,7 +430,8 @@ struct search_plan_impl : public search_plan_impl_base {
       } else {
         hashmap_mode = hash_mode::HASH;
       }
-    } else if (algo == search_algo::WARP_DISTANCE) {
+    } else if (algo == search_algo::SINGLE_NEIGHBOR_LIST_MULTI_CTA_V1 ||
+               algo == search_algo::SINGLE_NEIGHBOR_LIST_MULTI_CTA_V2) {
       if (team_size != 32) {
         error_message += "`team_size` must be 32 when 'search_mode' is \"warp_distance\". " +
                          std::to_string(team_size) + " has been given.";

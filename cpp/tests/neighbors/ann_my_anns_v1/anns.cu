@@ -501,7 +501,7 @@ class AnnMyAnnsV1 : public ::testing::TestWithParam<AnnMyAnnsV1TestParams> {
     my_anns_v1::search_params my_anns_v1_search_params = test_params.search_params;
     if (my_anns_v1_search_params.algo == search_algo::AUTO) {
       run_gemm();
-    } else if (my_anns_v1_search_params.algo == search_algo::WARP_DISTANCE) {
+    } else if (my_anns_v1_search_params.algo == search_algo::SINGLE_NEIGHBOR_LIST_MULTI_CTA_V1) {
       run_warp_distance();
     } else {
       throw std::runtime_error("Untested search algorithm");
@@ -583,7 +583,7 @@ static auto generate_warp_distance_search_params()
     search_params.thread_block_size = 256;
     search_params.search_width      = 1;
     search_params.max_iterations    = 0;
-    search_params.algo              = search_algo::WARP_DISTANCE;
+    search_params.algo              = search_algo::SINGLE_NEIGHBOR_LIST_MULTI_CTA_V1;
 
     params_vec.push_back({search_params, 1});
   }

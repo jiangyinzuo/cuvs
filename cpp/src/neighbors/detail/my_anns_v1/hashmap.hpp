@@ -45,6 +45,42 @@ RAFT_DEVICE_INLINE_FUNCTION void init(IdxT* const table,
 }
 
 template <class IdxT, unsigned SUPPORT_REMOVE = 0>
+RAFT_DEVICE_INLINE_FUNCTION uint32_t search_and_insert(IdxT* const table,
+                                                       const uint32_t bitlen,
+                                                       const IdxT key)
+{
+  // Open addressing is used for collision resolution
+  const uint32_t size     = get_size(bitlen);
+  const uint32_t bit_mask = size - 1;
+#ifdef HASHMAP_LINEAR_PROBING
+  // Linear probing
+  IdxT index                = (key ^ (key >> bitlen)) & bit_mask;
+  constexpr uint32_t stride = 1;
+#else
+  // Double hashing
+  uint32_t index        = key & bit_mask;
+  const uint32_t stride = (key >> bitlen) * 2 + 1;
+#endif
+  constexpr IdxT hashval_empty = ~static_cast<IdxT>(0);
+  const IdxT removed_key       = key | utils::gen_index_msb_1_mask<IdxT>::value;
+  for (unsigned i = 0; i < size; i++) {
+    const IdxT val = table[index];
+    if (val == key) {
+      return 1;
+    } else if (val == hashval_empty) {
+      const IdxT old = atomicCAS(&table[index], hashval_empty, key);
+      if (old == hashval_empty || table[index] == val) { return 1; }
+    } else if (SUPPORT_REMOVE) {
+      // Check if this key has been removed.
+      const IdxT old = atomicCAS(&table[index], removed_key, key);
+      if (old == removed_key || table[index] == val) { return 1; }
+    }
+    index = (index + stride) & bit_mask;
+  }
+  return 0;
+}
+
+template <class IdxT, unsigned SUPPORT_REMOVE = 0>
 RAFT_DEVICE_INLINE_FUNCTION uint32_t insert(IdxT* const table,
                                             const uint32_t bitlen,
                                             const IdxT key)
