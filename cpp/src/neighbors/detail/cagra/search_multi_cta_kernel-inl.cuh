@@ -327,9 +327,7 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
     __syncthreads();
     _CLK_REC(clk_pickup_parents);
 #ifdef _GRAPH_QUALITY_ANALYSIS
-    if (METRIC_THREAD_COND()) {
-      atomicAdd(&cagra_metrics->counter_pickup_parents, 1UL);
-    }
+    if (METRIC_THREAD_COND()) { atomicAdd(&cagra_metrics->counter_pickup_parents, 1UL); }
 #endif
 
     if ((parent_indices_buffer[0] == invalid_index) && (iter >= min_iteration)) { break; }
@@ -367,16 +365,14 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
       traversed_hash_bitlen,
       parent_indices_buffer,
       result_indices_buffer,
-      1,
-      result_position,
-      result_buffer_size_32
+      result_buffer_size_32,
 #ifdef _GRAPH_QUALITY_ANALYSIS
-                                            ,
-                                            cagra_metrics,
-                                            &local_distance_calculation_counter1,
-                                            &local_distance_calculation_counter2
+      cagra_metrics,
+      &local_distance_calculation_counter1,
+      &local_distance_calculation_counter2,
 #endif
-      );
+      result_position,
+      1);
     // __syncthreads();
 
     // Check the state of the nodes in the result buffer which were not updated
@@ -391,7 +387,7 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
       }
     }
     __syncthreads();
-    _CLK_REC(clk_compute_distance);
+    // _CLK_REC(clk_compute_distance);
 
     // Filtering
     if constexpr (!std::is_same<SAMPLE_FILTER_T,

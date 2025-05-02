@@ -81,8 +81,13 @@ struct search : search_plan_impl<DataT, IndexT, DistanceT, SAMPLE_FILTER_T> {
   using base_type::small_hash_reset_interval;
 
   using base_type::smem_size;
-
+#ifdef _GRAPH_QUALITY_ANALYSIS
   using base_type::cagra_metrics;
+  using base_type::top1_distances_per_iter;
+  using base_type::topk_distances_per_iter;
+  using base_type::top1_distances_per_iter_counter;
+  using base_type::topk_distances_per_iter_counter;
+#endif
   using base_type::dataset_desc;
   using base_type::dev_seed;
   using base_type::hashmap;
@@ -249,20 +254,58 @@ struct search : search_plan_impl<DataT, IndexT, DistanceT, SAMPLE_FILTER_T> {
                    sample_filter,
 #ifdef _GRAPH_QUALITY_ANALYSIS
                    cagra_metrics.data(),
+                   top1_distances_per_iter.data(),
+                   topk_distances_per_iter.data(),
+                   top1_distances_per_iter_counter.data(),
+                   topk_distances_per_iter_counter.data(),
 #endif
                    stream);
 
 #ifdef _GRAPH_QUALITY_ANALYSIS
     uint32_t* my_num_executed_iterations_host = new uint32_t[num_queries];
-    raft::update_host(my_num_executed_iterations_host, num_executed_iterations, num_queries, stream);
+    float* top1_distances_per_iter_host       = new float[max_iterations];
+    float* topk_distances_per_iter_host       = new float[max_iterations];
+    uint32_t* top1_distances_per_iter_counter_host =
+      new uint32_t[max_iterations * num_queries];
+    uint32_t* topk_distances_per_iter_counter_host =
+      new uint32_t[max_iterations * num_queries];
+
+    raft::update_host(
+      my_num_executed_iterations_host, num_executed_iterations, num_queries, stream);
+    raft::update_host(
+      top1_distances_per_iter_host, top1_distances_per_iter.data(), max_iterations, stream);
+    raft::update_host(
+      topk_distances_per_iter_host, topk_distances_per_iter.data(), max_iterations, stream);
+    raft::update_host(top1_distances_per_iter_counter_host,
+                      top1_distances_per_iter_counter.data(),
+                      max_iterations * num_queries,
+                      stream);
+    raft::update_host(topk_distances_per_iter_counter_host,
+                      topk_distances_per_iter_counter.data(),
+                      max_iterations * num_queries,
+                      stream);
     // copy the metrics back to host
     CagraMetrics cagra_metrics_host;
     raft::update_host(&cagra_metrics_host, cagra_metrics.data(), 1, stream);
     // sync the cuda_stream
     raft::resource::sync_stream(res, stream);
     // uint32_t* num_executed_iterations_host = new uint32_t[num_queries];
-    // raft::update_host(num_executed_iterations_host, num_executed_iterations, num_queries, stream);
-    CagraMetricsAccumulator::get_instance().accumulate(cagra_metrics_host, my_num_executed_iterations_host, num_queries, CagraKernelType::kSingleCta);
+    // raft::update_host(num_executed_iterations_host, num_executed_iterations, num_queries,
+    // stream);
+    CagraMetricsAccumulator::get_instance().accumulate(cagra_metrics_host,
+                                                       my_num_executed_iterations_host,
+                                                       num_queries,
+                                                       CagraKernelType::kSingleCta,
+                                                       top1_distances_per_iter_host,
+                                                       topk_distances_per_iter_host,
+                                                       top1_distances_per_iter_counter_host,
+                                                       topk_distances_per_iter_counter_host,
+                                                       max_iterations);
+    delete[] my_num_executed_iterations_host;
+    delete[] top1_distances_per_iter_host;
+    delete[] topk_distances_per_iter_host;
+    delete[] top1_distances_per_iter_counter_host;
+    delete[] topk_distances_per_iter_counter_host;
 #endif
   }
 };

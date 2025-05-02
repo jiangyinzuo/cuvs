@@ -39,6 +39,7 @@ groups:
       # hash_mode: ["auto", "cache", "always_unvisited"]
       hash_mode: ["auto"]
       algo: ["single_neighbor_list_multi_cta_v1", "single_neighbor_list_multi_cta_v2", "multi_cta", "single_cta"]
+      thread_block_size: [512]
   warp_distance_ncu:
     build:
       graph_degree: [32]

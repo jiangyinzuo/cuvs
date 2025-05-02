@@ -86,11 +86,13 @@ struct search : public search_plan_impl<DataT, IndexT, DistanceT, SAMPLE_FILTER_
 
   using base_type::smem_size;
 
+#ifdef _GRAPH_QUALITY_ANALYSIS
+  using base_type::cagra_metrics;
+#endif
   using base_type::dataset_desc;
   using base_type::dev_seed;
   using base_type::hashmap;
   using base_type::num_executed_iterations;
-  using base_type::cagra_metrics;
   using base_type::num_seeds;
 
   uint32_t num_cta_per_query;
@@ -213,8 +215,7 @@ struct search : public search_plan_impl<DataT, IndexT, DistanceT, SAMPLE_FILTER_
                   const INDEX_T* dev_seed_ptr,              // [num_queries, num_seeds]
                   uint32_t* const num_executed_iterations,  // [num_queries,]
                   uint32_t topk,
-                  SAMPLE_FILTER_T sample_filter
-  )
+                  SAMPLE_FILTER_T sample_filter)
   {
     auto stream = raft::resource::get_cuda_stream(res);
     select_and_run(dataset_desc,
@@ -261,15 +262,27 @@ struct search : public search_plan_impl<DataT, IndexT, DistanceT, SAMPLE_FILTER_
                      stream);
 #ifdef _GRAPH_QUALITY_ANALYSIS
     uint32_t* my_num_executed_iterations_host = new uint32_t[num_queries];
-    raft::update_host(my_num_executed_iterations_host, num_executed_iterations, num_queries, stream);
+    raft::update_host(
+      my_num_executed_iterations_host, num_executed_iterations, num_queries, stream);
     // copy the metrics back to host
     CagraMetrics cagra_metrics_host;
     raft::update_host(&cagra_metrics_host, cagra_metrics.data(), 1, stream);
     // sync the cuda_stream
     raft::resource::sync_stream(res, stream);
     // uint32_t* num_executed_iterations_host = new uint32_t[num_queries];
-    // raft::update_host(num_executed_iterations_host, num_executed_iterations, num_queries, stream);
-    CagraMetricsAccumulator::get_instance().accumulate(cagra_metrics_host, my_num_executed_iterations_host, num_queries, CagraKernelType::kMultiCta);
+    // raft::update_host(num_executed_iterations_host, num_executed_iterations, num_queries,
+    // stream);
+    //
+    // TODO(jiangyinzuo): top1/topk distances
+    CagraMetricsAccumulator::get_instance().accumulate(cagra_metrics_host,
+                                                       my_num_executed_iterations_host,
+                                                       num_queries,
+                                                       CagraKernelType::kMultiCta,
+                                                       nullptr,
+                                                       nullptr,
+                                                       nullptr,
+                                                       nullptr,
+                                                       0);
 #endif
   }
 };

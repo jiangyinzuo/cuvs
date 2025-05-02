@@ -541,7 +541,11 @@ __device__ void search_core(
   SAMPLE_FILTER_T sample_filter
 #ifdef _GRAPH_QUALITY_ANALYSIS
   ,
-  CagraMetrics* cagra_metrics
+  CagraMetrics* cagra_metrics,
+  float* top1_distances_per_iter,             // [max_iterations]
+  float* topk_distances_per_iter,             // [max_iterations]
+  uint32_t* top1_distances_per_iter_counter,  // [max_iterations]
+  uint32_t* topk_distances_per_iter_counter   // [max_iterations]
 #endif
 )
 {
@@ -561,6 +565,14 @@ __device__ void search_core(
   }
   if (threadIdx.x == 0 && query_id == 0) { cagra_metrics->reset(); }
   if (METRIC_THREAD_COND()) { atomicAdd(&cagra_metrics->counter_clk_thread, 1UL); }
+  if (blockIdx.x == 0) {
+    for (uint32_t i = threadIdx.x; i < max_iteration; i += blockDim.x) {
+      top1_distances_per_iter[i]              = 0;
+      topk_distances_per_iter[i]              = 0;
+      top1_distances_per_iter_counter[i] = 0;
+      topk_distances_per_iter_counter[i] = 0;
+    }
+  }
   __syncthreads();
 #endif
 
@@ -758,6 +770,22 @@ __device__ void search_core(
     __syncthreads();
 
     if (iter + 1 == max_iteration) { break; }
+#ifdef _GRAPH_QUALITY_ANALYSIS
+    if (threadIdx.x == 0) {
+      const INDEX_T invalid_index = utils::get_max_value<INDEX_T>();
+      if (result_indices_buffer[0] != invalid_index) {
+        top1_distances_per_iter[iter] = result_distances_buffer[0];
+        // printf("%f\n", top1_distances_per_iter[iter]);
+        atomicAdd(&top1_distances_per_iter[iter], (float)result_distances_buffer[0]);
+        atomicAdd(&top1_distances_per_iter_counter[iter], 1);
+      }
+      if (result_indices_buffer[top_k - 1] != invalid_index) {
+        // topk_distances_per_iter[iter] = result_distances_buffer[top_k - 1];
+        atomicAdd(&topk_distances_per_iter[iter], (float)result_distances_buffer[top_k - 1]);
+        atomicAdd(&topk_distances_per_iter_counter[iter], 1);
+      }
+    }
+#endif
 
     // pick up next parents
     if (threadIdx.x < 32) {
@@ -1031,7 +1059,11 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
   SAMPLE_FILTER_T sample_filter
 #ifdef _GRAPH_QUALITY_ANALYSIS
   ,
-  CagraMetrics* cagra_metrics
+  CagraMetrics* cagra_metrics,
+  float* top1_distances_per_iter,             // [max_iterations]
+  float* topk_distances_per_iter,             // [max_iterations]
+  uint32_t* top1_distances_per_iter_counter,  // [max_iterations]
+  uint32_t* topk_distances_per_iter_counter   // [max_iterations]
 #endif
 )
 {
@@ -1064,7 +1096,11 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
                                sample_filter
 #ifdef _GRAPH_QUALITY_ANALYSIS
                                ,
-                               cagra_metrics
+                               cagra_metrics,
+                               top1_distances_per_iter,
+                               topk_distances_per_iter,
+                               top1_distances_per_iter_counter,
+                               topk_distances_per_iter_counter
 #endif
   );
 }
@@ -1161,7 +1197,11 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel_p(
   SAMPLE_FILTER_T sample_filter
 #ifdef _GRAPH_QUALITY_ANALYSIS
   ,
-  CagraMetrics* cagra_metrics
+  CagraMetrics* cagra_metrics,
+  float* top1_distances_per_iter,             // [max_iterations]
+  float* topk_distances_per_iter,             // [max_iterations]
+  uint32_t* top1_distances_per_iter_counter,  // [max_iterations]
+  uint32_t* topk_distances_per_iter_counter   // [max_iterations]
 #endif
 )
 {
@@ -1234,7 +1274,13 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel_p(
                                  sample_filter
 #ifdef _GRAPH_QUALITY_ANALYSIS
                                  ,
-                                 cagra_metrics
+                                 cagra_metrics,
+                                 top1_distances_per_iter,  // [max_iterations]
+                                 topk_distances_per_iter,  // [max_iterations]
+                                 top1_distances_per_iter_counter,
+
+                                 topk_distances_per_iter_counter
+
 #endif
     );
 
@@ -2162,6 +2208,10 @@ void select_and_run(const dataset_descriptor_host<DataT, IndexT, DistanceT>& dat
                     SampleFilterT sample_filter,
 #ifdef _GRAPH_QUALITY_ANALYSIS
                     CagraMetrics* cagra_metrics,
+                    float* top1_distances_per_iter,             // [max_iterations]
+                    float* topk_distances_per_iter,             // [max_iterations]
+                    uint32_t* top1_distances_per_iter_counter,  // [max_iterations]
+                    uint32_t* topk_distances_per_iter_counter,  // [max_iterations]
 #endif
                     cudaStream_t stream)
 {
@@ -2225,7 +2275,11 @@ control is returned in this thread (in persistent_runner_t constructor), so we'r
                                                            sample_filter
 #ifdef _GRAPH_QUALITY_ANALYSIS
                                                            ,
-                                                           cagra_metrics
+                                                           cagra_metrics,
+                                                           top1_distances_per_iter,
+                                                           topk_distances_per_iter,
+                                                           top1_distances_per_iter_counter,
+                                                           topk_distances_per_iter_counter
 #endif
     );
     RAFT_CUDA_TRY(cudaPeekAtLastError());

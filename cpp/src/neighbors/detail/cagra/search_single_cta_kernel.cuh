@@ -17,8 +17,8 @@
 
 #include "compute_distance-ext.cuh"
 
-#include <cuvs/neighbors/cagra_metrics.cuh>
 #include <cuvs/neighbors/cagra.hpp>
+#include <cuvs/neighbors/cagra_metrics.cuh>
 
 namespace cuvs::neighbors::cagra::detail::single_cta_search {
 
@@ -44,7 +44,10 @@ void select_and_run(const dataset_descriptor_host<DataT, IndexT, DistanceT>& dat
                     SampleFilterT sample_filter,
 #ifdef _GRAPH_QUALITY_ANALYSIS
                     CagraMetrics* metrics,
+                    float* top1_distances_per_iter,                  // [max_iterations]
+                    float* topk_distances_per_iter,                  // [max_iterations]
+                    uint32_t* top1_topk_distances_per_iter_counter,  // [max_iterations]
 #endif
                     cudaStream_t stream);
 
-}
+}  // namespace cuvs::neighbors::cagra::detail::single_cta_search

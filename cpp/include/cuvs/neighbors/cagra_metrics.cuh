@@ -33,13 +33,13 @@ struct CagraMetrics {
 
   __host__ __device__ void reset()
   {
-    counter_clk_thread = 0;
-    clk_init           = 0;
-    clk_compute_1st_distance = 0;
-    clk_topk                 = 0;
+    counter_clk_thread        = 0;
+    clk_init                  = 0;
+    clk_compute_1st_distance  = 0;
+    clk_topk                  = 0;
     counter_topk_bitonic_sort = 0;
     counter_topk_radix_sort   = 0;
-    clk_reset_hash           = 0;
+    clk_reset_hash            = 0;
     counter_reset_hash        = 0;
     clk_pickup_parents        = 0;
     counter_pickup_parents    = 0;
@@ -50,7 +50,7 @@ struct CagraMetrics {
     clk_compute_distance      = 0;
     clk_final                 = 0;
 
-    clk_counter              = 0;
+    clk_counter = 0;
 
     global_distance_calculation_counter1           = 0;
     global_distance_calculation_counter2           = 0;
@@ -87,10 +87,21 @@ struct CagraMetricsAccumulator {
   uint64_t num_queries{};
   CagraKernelType kernel_type{CagraKernelType::kUnknown};
 
+  float* top1_distances_per_iter_{nullptr};
+  float* topk_distances_per_iter_{nullptr};
+  uint32_t* top1_distances_per_iter_counter_{nullptr};
+  uint32_t* topk_distances_per_iter_counter_{nullptr};
+  size_t max_iterations;
+
   void accumulate(const CagraMetrics& m,
                   uint32_t* const num_executed_iterations,
                   const uint32_t num_queries,
-                  CagraKernelType kernel_type)
+                  CagraKernelType kernel_type,
+                  float* top1_distances_per_iter_host,
+                  float* topk_distances_per_iter_host,
+                  uint32_t* top1_distances_per_iter_counter_host,
+                  uint32_t* topk_distances_per_iter_counter_host,
+                  size_t max_iterations)
   {
     metrics.counter_clk_thread += m.counter_clk_thread;
     metrics.clk_init += m.clk_init;
@@ -123,6 +134,30 @@ struct CagraMetricsAccumulator {
     }
     this->num_queries += num_queries;
     this->kernel_type = kernel_type;
+
+    this->max_iterations = max_iterations;
+    if (top1_distances_per_iter_ == nullptr) {
+      top1_distances_per_iter_ = new float[max_iterations];
+      memset(top1_distances_per_iter_, 0, sizeof(float) * max_iterations);
+    }
+    if (topk_distances_per_iter_ == nullptr) {
+      topk_distances_per_iter_ = new float[max_iterations];
+      memset(topk_distances_per_iter_, 0, sizeof(float) * max_iterations);
+    }
+    if (top1_distances_per_iter_counter_ == nullptr) {
+      top1_distances_per_iter_counter_ = new uint32_t[max_iterations];
+      memset(top1_distances_per_iter_counter_, 0, sizeof(uint32_t) * max_iterations);
+    }
+    if (topk_distances_per_iter_counter_ == nullptr) {
+      topk_distances_per_iter_counter_ = new uint32_t[max_iterations];
+      memset(topk_distances_per_iter_counter_, 0, sizeof(uint32_t) * max_iterations);
+    }
+    for (size_t i = 0; i < max_iterations; ++i) {
+      top1_distances_per_iter_[i] += top1_distances_per_iter_host[i];
+      topk_distances_per_iter_[i] += topk_distances_per_iter_host[i];
+      top1_distances_per_iter_counter_[i] += top1_distances_per_iter_counter_host[i];
+      topk_distances_per_iter_counter_[i] += topk_distances_per_iter_counter_host[i];
+    }
   }
 
   void reset()
@@ -131,9 +166,18 @@ struct CagraMetricsAccumulator {
     num_executed_iterations = 0;
     num_queries             = 0;
     kernel_type             = CagraKernelType::kUnknown;
+    delete[] top1_distances_per_iter_;
+    delete[] topk_distances_per_iter_;
+    delete[] top1_distances_per_iter_counter_;
+    delete[] topk_distances_per_iter_counter_;
+    top1_distances_per_iter_ = nullptr;
+    topk_distances_per_iter_ = nullptr;
+    top1_distances_per_iter_counter_ = nullptr;
+    topk_distances_per_iter_counter_ = nullptr;
   }
 
-  void print_metrics() const {
+  void print_metrics() const
+  {
     std::cout << "counter_clk_thread: " << metrics.counter_clk_thread << std::endl;
     std::cout << "clk_init: " << metrics.clk_init << std::endl;
     std::cout << "clk_compute_1st_distance: " << metrics.clk_compute_1st_distance << std::endl;
@@ -153,11 +197,16 @@ struct CagraMetricsAccumulator {
 
     std::cout << "clk_counter: " << metrics.clk_counter << std::endl;
 
-    std::cout << "global_distance_calculation_counter1: " << metrics.global_distance_calculation_counter1 << std::endl;
-    std::cout << "global_distance_calculation_counter2: " << metrics.global_distance_calculation_counter2 << std::endl;
-    std::cout << "global_distance_calculation_counter3: " << metrics.global_distance_calculation_counter3 << std::endl;
-    std::cout << "global_distance_calculation_counter4: " << metrics.global_distance_calculation_counter4 << std::endl;
-    std::cout << "global_distance_calculation_counter3_4_counter: " << metrics.global_distance_calculation_counter3_4_counter << std::endl;
+    std::cout << "global_distance_calculation_counter1: "
+              << metrics.global_distance_calculation_counter1 << std::endl;
+    std::cout << "global_distance_calculation_counter2: "
+              << metrics.global_distance_calculation_counter2 << std::endl;
+    std::cout << "global_distance_calculation_counter3: "
+              << metrics.global_distance_calculation_counter3 << std::endl;
+    std::cout << "global_distance_calculation_counter4: "
+              << metrics.global_distance_calculation_counter4 << std::endl;
+    std::cout << "global_distance_calculation_counter3_4_counter: "
+              << metrics.global_distance_calculation_counter3_4_counter << std::endl;
 
     std::cout << "num_executed_iterations: " << num_executed_iterations << std::endl;
     std::cout << "num_queries: " << num_queries << std::endl;

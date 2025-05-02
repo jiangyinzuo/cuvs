@@ -44,6 +44,10 @@ namespace cuvs::neighbors::cagra::detail::single_cta_search {
     uint32_t num_seeds,                                                       \
     SampleFilterT sample_filter,                                              \
     CagraMetrics* metrics,                                                    \
+    float* top1_distances_per_iter,                                           \
+    float* topk_distances_per_iter,                                           \
+    uint32_t* top1_distances_per_iter_counter,                                \
+    uint32_t* topk_distances_per_iter_counter,                                \
     cudaStream_t stream);
 #else
 #define instantiate_kernel_selection(DataT, IndexT, DistanceT, SampleFilterT) \

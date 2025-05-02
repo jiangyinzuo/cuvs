@@ -151,7 +151,13 @@ struct search_plan_impl : public search_plan_impl_base {
 
   lightweight_uvector<INDEX_T> hashmap;
   lightweight_uvector<uint32_t> num_executed_iterations;  // device or managed?
+#ifdef _GRAPH_QUALITY_ANALYSIS
   lightweight_uvector<CagraMetrics> cagra_metrics;
+  lightweight_uvector<float> top1_distances_per_iter;
+  lightweight_uvector<float> topk_distances_per_iter;
+  lightweight_uvector<uint32_t> top1_distances_per_iter_counter;
+  lightweight_uvector<uint32_t> topk_distances_per_iter_counter;
+#endif
   lightweight_uvector<INDEX_T> dev_seed;
   dataset_descriptor_host<DataT, IndexT, DistanceT> dataset_desc;
 
@@ -165,7 +171,13 @@ struct search_plan_impl : public search_plan_impl_base {
     : search_plan_impl_base(params, dim, dataset_size, graph_degree, topk),
       hashmap(res),
       num_executed_iterations(res),
+#ifdef _GRAPH_QUALITY_ANALYSIS
       cagra_metrics(res),
+      top1_distances_per_iter(res),
+      topk_distances_per_iter(res),
+      top1_distances_per_iter_counter(res),
+      topk_distances_per_iter_counter(res),
+#endif
       dev_seed(res),
       num_seeds(0),
       dataset_desc(dataset_desc)
@@ -176,7 +188,13 @@ struct search_plan_impl : public search_plan_impl_base {
     if (!persistent) {  // Persistent kernel does not provide this functionality
       num_executed_iterations.resize(max_queries, raft::resource::get_cuda_stream(res));
     }
+#ifdef _GRAPH_QUALITY_ANALYSIS
     cagra_metrics.resize(1, raft::resource::get_cuda_stream(res));
+    top1_distances_per_iter.resize(max_iterations, raft::resource::get_cuda_stream(res));
+    topk_distances_per_iter.resize(max_iterations, raft::resource::get_cuda_stream(res));
+    top1_distances_per_iter_counter.resize(max_iterations, raft::resource::get_cuda_stream(res));
+    topk_distances_per_iter_counter.resize(max_iterations, raft::resource::get_cuda_stream(res));
+#endif
     RAFT_LOG_DEBUG("# algo = %d", static_cast<int>(algo));
   }
 

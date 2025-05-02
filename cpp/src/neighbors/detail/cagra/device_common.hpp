@@ -226,16 +226,13 @@ RAFT_DEVICE_INLINE_FUNCTION void compute_distance_to_child_nodes(
   const IndexT* __restrict__ parent_indices,
   const IndexT* __restrict__ internal_topk_list,
   const uint32_t search_width,
-  int* __restrict__ result_position = nullptr,
-  const int max_result_position     = 0
 #ifdef _GRAPH_QUALITY_ANALYSIS
-  ,
   CagraMetrics* __restrict__ metrics,
   uint64_t* __restrict__ local_distance_calculation_counter1,
-  uint64_t* __restrict__ local_distance_calculation_counter2
-  )
+  uint64_t* __restrict__ local_distance_calculation_counter2,
 #endif
-)
+  int* __restrict__ result_position = nullptr,
+  const int max_result_position     = 0)
 {
   constexpr IndexT index_msb_1_mask = utils::gen_index_msb_1_mask<IndexT>::value;
   constexpr IndexT invalid_index    = ~static_cast<IndexT>(0);
