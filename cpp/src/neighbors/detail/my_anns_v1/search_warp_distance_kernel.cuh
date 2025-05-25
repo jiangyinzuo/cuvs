@@ -35,6 +35,7 @@ void select_and_run(const dataset_descriptor_host<DataT, IndexT, DistanceT>& dat
                     uint32_t* num_executed_iterations,  // [num_queries,]
                     const search_params& ps,
                     uint32_t topk,
+                    uint32_t num_itopk_candidates,
                     // multi_cta_search (params struct)
                     uint32_t block_size,  //
                     uint32_t result_buffer_size,

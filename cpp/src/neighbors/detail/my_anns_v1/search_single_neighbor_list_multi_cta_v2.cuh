@@ -231,6 +231,7 @@ struct search : search_plan_impl<DataT, IndexT, DistanceT, SAMPLE_FILTER_T> {
 
     candidate_indices_buffer.resize(graph_degree, raft::resource::get_cuda_stream(res));
     candidate_distances_buffer.resize(graph_degree, raft::resource::get_cuda_stream(res));
+    RAFT_EXPECTS(max_queries == 1, "max_queries must be 1");
   }
 
   void operator()(

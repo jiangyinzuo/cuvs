@@ -35,8 +35,8 @@ function(find_and_configure_glog)
 
 endfunction()
 
-find_and_configure_glog(VERSION 0.6.0
+find_and_configure_glog(VERSION 0.7.1
         FORK             google
-        PINNED_TAG       v0.6.0
+        PINNED_TAG       v0.7.1
         EXCLUDE_FROM_ALL ON
         )

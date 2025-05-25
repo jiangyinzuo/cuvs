@@ -22,8 +22,8 @@ function(find_and_configure_nlohmann_json)
     rapids_cpm_find(nlohmann_json ${PKG_VERSION}
             GLOBAL_TARGETS      nlohmann_json::nlohmann_json
             CPM_ARGS
-            # GIT_REPOSITORY         https://github.com/${PKG_FORK}/json.git
-            GIT_REPOSITORY       /home/jiangyinzuo/gpudb-ictdb/json
+            GIT_REPOSITORY         https://github.com/${PKG_FORK}/json.git
+            # GIT_REPOSITORY       /home/jiangyinzuo/gpudb-ictdb/json
             GIT_TAG                ${PKG_PINNED_TAG}
             EXCLUDE_FROM_ALL       ${PKG_EXCLUDE_FROM_ALL}
             )
@@ -36,8 +36,8 @@ function(find_and_configure_nlohmann_json)
 
 endfunction()
 
-find_and_configure_nlohmann_json(VERSION  3.11.2
+find_and_configure_nlohmann_json(VERSION  3.12.0
         FORK             nlohmann
-        PINNED_TAG       v3.11.2
+        PINNED_TAG       v3.12.0
         EXCLUDE_FROM_ALL ON
         )

@@ -23,8 +23,7 @@ groups:
       algo: ["auto"]
   warp_distance:
     build:
-      graph_degree: [16, 32, 64, 128]
-      # graph_degree: [16, 32, 48, 64, 96, 128]
+      graph_degree: [16, 32, 48, 64, 96, 128]
       intermediate_graph_degree: [16, 32, 48, 64, 96, 128]
       graph_build_algo: ["NN_DESCENT"]
     search:
@@ -42,15 +41,15 @@ groups:
       thread_block_size: [512]
   warp_distance_ncu:
     build:
-      graph_degree: [32]
+      graph_degree: [64]
       # graph_degree: [16, 32, 48, 64, 96, 128]
-      intermediate_graph_degree: [48]
+      intermediate_graph_degree: [96]
       graph_build_algo: ["NN_DESCENT"]
     search:
       # must be multiple of 32
       # itopk: [128, 256, 512]
       # itopk: [32, 64]
-      itopk: [64]
+      itopk: [32]
       search_width: [1]
       # search_width: [1, 2, 4]
       # 16384: oom

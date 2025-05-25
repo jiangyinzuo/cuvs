@@ -19,8 +19,9 @@
 #include "compute_distance-ext.cuh"
 #include "device_common.cuh"
 #include "hashmap.hpp"
-#include "search_warp_distance_kernel.cuh"
 #include "search_plan.cuh"
+#include "search_warp_distance_kernel.cuh"
+#include "topk_by_radix.cuh"
 #include "topk_for_my_anns_v1/topk.h"  // TODO replace with raft topk if possible
 #include "utils.hpp"
 
@@ -47,6 +48,8 @@
 #include <memory>
 #include <numeric>
 #include <vector>
+
+#include "visited_table.cuh"
 
 namespace cuvs::neighbors::my_anns_v1::detail {
 namespace warp_distance_search {
@@ -89,9 +92,11 @@ struct search : public search_plan_impl<DataT, IndexT, DistanceT, SAMPLE_FILTER_
   using base_type::dataset_desc;
   using base_type::dev_seed;
   using base_type::hashmap;
-  using base_type::num_executed_iterations;
   using base_type::my_anns_v1_metrics;
+  using base_type::num_executed_iterations;
   using base_type::num_seeds;
+
+  uint32_t num_itopk_candidates;
 
   uint32_t num_cta_per_query;
   lightweight_uvector<INDEX_T> intermediate_indices;
@@ -134,12 +139,36 @@ struct search : public search_plan_impl<DataT, IndexT, DistanceT, SAMPLE_FILTER_
     // constexpr unsigned max_result_buffer_size = 256;
     RAFT_EXPECTS(result_buffer_size_32 <= 256, "Result buffer size cannot exceed 256");
 
+    num_itopk_candidates = search_width * graph_degree;
+
+    std::uint32_t additional_smem_size = 0;
+    if (num_itopk_candidates > 256) {
+      // Tentatively calculate the required share memory size when radix
+      // sort based topk is used, assuming the block size is the maximum.
+      if (itopk_size <= 256) {
+        additional_smem_size +=
+          single_cta_search::topk_by_radix_sort<256, INDEX_T>::smem_size * sizeof(std::uint32_t);
+      } else {
+        additional_smem_size +=
+          single_cta_search::topk_by_radix_sort<512, INDEX_T>::smem_size * sizeof(std::uint32_t);
+      }
+    }
+
+    if (!std::is_same_v<SAMPLE_FILTER_T, cuvs::neighbors::filtering::none_sample_filter>) {
+      // For filtering postprocess
+      using scan_op_t = cub::WarpScan<unsigned>;
+      additional_smem_size =
+        std::max<std::uint32_t>(additional_smem_size, sizeof(scan_op_t::TempStorage));
+    }
+
     smem_size =
       dataset_desc.smem_ws_size_in_bytes +
       (sizeof(INDEX_T) + sizeof(DISTANCE_T)) * (result_buffer_size_32) +
       sizeof(INDEX_T) * hashmap::get_size(small_hash_bitlen) +  // local_visited_hashmap_ptr
       sizeof(INDEX_T) * search_width +                          // parent_indices_buffer
-      sizeof(int);                                              // result_position
+      sizeof(int) +                                             // result_position
+      3 +                                                       // topk_ws
+      additional_smem_size;
     RAFT_LOG_DEBUG("# smem_size: %u", smem_size);
 
     //
@@ -187,12 +216,13 @@ struct search : public search_plan_impl<DataT, IndexT, DistanceT, SAMPLE_FILTER_
                                 raft::resource::get_cuda_stream(res));
     intermediate_distances.resize(num_intermediate_results * max_queries,
                                   raft::resource::get_cuda_stream(res));
-    candidate_indices_buffer.resize(graph_degree,
-                                    raft::resource::get_cuda_stream(res));
-    candidate_distances_buffer.resize(graph_degree,
-                                       raft::resource::get_cuda_stream(res));
+    candidate_indices_buffer.resize(graph_degree, raft::resource::get_cuda_stream(res));
+    candidate_distances_buffer.resize(graph_degree, raft::resource::get_cuda_stream(res));
 
-    hashmap.resize(hashmap_size, raft::resource::get_cuda_stream(res));
+    // TODO(jiangyinzuo): do not hardcode bitmap size
+    // bitmap size is 32 * 10M
+    hashmap.resize(visited_table::GlobalBitmap<IndexT>::default_size,
+                   raft::resource::get_cuda_stream(res));
 
     topk_workspace_size = _cuann_find_topk_bufferSize(
       topk, max_queries, num_intermediate_results, utils::get_cuda_data_type<DATA_T>());
@@ -214,18 +244,18 @@ struct search : public search_plan_impl<DataT, IndexT, DistanceT, SAMPLE_FILTER_
 
   ~search() {}
 
-  void operator()(raft::resources const& res,
-                  const index<DATA_T, INDEX_T>& index, // used for entry points GEMM distance computation
-                  raft::device_matrix_view<const INDEX_T, int64_t, raft::row_major> graph,
-                  INDEX_T* const topk_indices_ptr,       // [num_queries, topk]
-                  DISTANCE_T* const topk_distances_ptr,  // [num_queries, topk]
-                  const DATA_T* const queries_ptr,       // [num_queries, dataset_dim]
-                  const uint32_t num_queries,
-                  const INDEX_T* dev_seed_ptr,              // [num_queries, num_seeds]
-                  uint32_t* const num_executed_iterations,  // [num_queries,]
-                  uint32_t topk,
-                  SAMPLE_FILTER_T sample_filter
-  ) override
+  void operator()(
+    raft::resources const& res,
+    const index<DATA_T, INDEX_T>& index,  // used for entry points GEMM distance computation
+    raft::device_matrix_view<const INDEX_T, int64_t, raft::row_major> graph,
+    INDEX_T* const topk_indices_ptr,       // [num_queries, topk]
+    DISTANCE_T* const topk_distances_ptr,  // [num_queries, topk]
+    const DATA_T* const queries_ptr,       // [num_queries, dataset_dim]
+    const uint32_t num_queries,
+    const INDEX_T* dev_seed_ptr,              // [num_queries, num_seeds]
+    uint32_t* const num_executed_iterations,  // [num_queries,]
+    uint32_t topk,
+    SAMPLE_FILTER_T sample_filter) override
   {
     auto stream = raft::resource::get_cuda_stream(res);
     select_and_run(dataset_desc,
@@ -240,6 +270,7 @@ struct search : public search_plan_impl<DataT, IndexT, DistanceT, SAMPLE_FILTER_
                    num_executed_iterations,
                    *this,
                    topk,
+                   num_itopk_candidates,
                    thread_block_size,
                    result_buffer_size,
                    smem_size,
@@ -257,18 +288,23 @@ struct search : public search_plan_impl<DataT, IndexT, DistanceT, SAMPLE_FILTER_
 
 #ifdef _GRAPH_QUALITY_ANALYSIS
     uint32_t* my_num_executed_iterations_host = new uint32_t[num_queries];
-    raft::update_host(my_num_executed_iterations_host, num_executed_iterations, num_queries, stream);
+    raft::update_host(
+      my_num_executed_iterations_host, num_executed_iterations, num_queries, stream);
     // copy the metrics back to host
     MyAnnsV1Metrics my_anns_v1_metrics_host;
     raft::update_host(&my_anns_v1_metrics_host, my_anns_v1_metrics.data(), 1, stream);
     // sync the cuda_stream
     raft::resource::sync_stream(res, stream);
     // uint32_t* num_executed_iterations_host = new uint32_t[num_queries];
-    // raft::update_host(num_executed_iterations_host, num_executed_iterations, num_queries, stream);
-    MyAnnsV1MetricsAccumulator::get_instance().accumulate(my_anns_v1_metrics_host, my_num_executed_iterations_host, num_queries, MyAnnsV1KernelType::kMultiCta);
+    // raft::update_host(num_executed_iterations_host, num_executed_iterations, num_queries,
+    // stream);
+    MyAnnsV1MetricsAccumulator::get_instance().accumulate(my_anns_v1_metrics_host,
+                                                          my_num_executed_iterations_host,
+                                                          num_queries,
+                                                          MyAnnsV1KernelType::kMultiCta);
 #endif
   }
 };
 
-}  // namespace multi_cta_search
+}  // namespace warp_distance_search
 }  // namespace cuvs::neighbors::my_anns_v1::detail

@@ -373,7 +373,7 @@ if(CUVS_ANN_BENCH_USE_SONG)
 endif()
 
 if(CUVS_ANN_BENCH_USE_CUHNSW)
-  include(cmake/thirdparty/get_json11)
+  # include(cmake/thirdparty/get_json11)
   find_package(spdlog REQUIRED)
   # set_source_files_properties(src/cuhnsw/cuhnsw_benchmark.cu PROPERTIES COMPILE_OPTIONS "-O0;-g;-G")
   ConfigureAnnBench(
@@ -383,7 +383,7 @@ if(CUVS_ANN_BENCH_USE_CUHNSW)
     src/cuhnsw/src/cuhnsw_base.cu
     src/cuhnsw/src/cuhnsw_build.cu
     src/cuhnsw/src/log.cc
-    LINKS json11 CUDA::curand spdlog::spdlog
+    LINKS CUDA::curand spdlog::spdlog
     INCLUDES src/cuhnsw/include/
   )
   # 为某个特定的源文件（如 foo.cpp）添加编译选项
@@ -401,7 +401,7 @@ if(CUVS_ANN_BENCH_USE_CUHNSW)
       src/cuhnsw/src/log.cc
   )
   target_link_libraries(
-      CUHNSW_GRAPH_ANALYSIS PRIVATE json11 CUDA::curand spdlog::spdlog
+      CUHNSW_GRAPH_ANALYSIS PRIVATE CUDA::curand spdlog::spdlog
   )
   target_include_directories(CUHNSW_GRAPH_ANALYSIS PRIVATE src/cuhnsw/include/)
 endif()

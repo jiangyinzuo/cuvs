@@ -23,6 +23,8 @@
 #include "graph_analysis_macros.h"
 #include "hashmap.hpp"
 #include "search_plan.cuh"
+#include "sort.cuh"
+#include "topk_by_radix.cuh"
 #include "topk_for_my_anns_v1/topk.h"  // TODO replace with raft topk if possible
 #include "utils.hpp"
 #include "visited_table.cuh"
@@ -60,26 +62,26 @@ namespace warp_distance_search {
 
 // #define _CLK_BREAKDOWN
 
-template <class INDEX_T, class DISTANCE_T>
+template <TopKSortType sort_type, class INDEX_T, class DISTANCE_T>
 RAFT_DEVICE_INLINE_FUNCTION void pickup_next_parent(
   INDEX_T* const next_parent_indices,
-  INDEX_T* const itopk_indices,       // [itopk_size * 2]
-  DISTANCE_T* const itopk_distances,  // [itopk_size * 2]
-  INDEX_T* const hash_ptr,
-  const uint32_t hash_bitlen)
+  INDEX_T* const itopk_indices,       // [internal_topk_size]
+  DISTANCE_T* const itopk_distances,  // [internal_topk_size]
+  const std::size_t internal_topk_size)
 {
-  constexpr uint32_t itopk_size      = 32;
   constexpr INDEX_T index_msb_1_mask = utils::gen_index_msb_1_mask<INDEX_T>::value;
   constexpr INDEX_T invalid_index    = ~static_cast<INDEX_T>(0);
 
-  const unsigned warp_id = threadIdx.x / 32;
+  const unsigned warp_id = threadIdx.x / warp_size();
   if (warp_id > 0) { return; }
   if (threadIdx.x == 0) { next_parent_indices[0] = invalid_index; }
   __syncwarp();
 
   int j = -1;
-  for (unsigned i = threadIdx.x; i < itopk_size * 2; i += 32) {
-    INDEX_T index    = itopk_indices[i];
+  for (unsigned i = threadIdx.x; i < internal_topk_size; i += warp_size()) {
+    std::uint32_t ii = i;
+    if (sort_type == TopKSortType::BITONIC_SORT_MERGE) { ii = device::swizzling(i); }
+    INDEX_T index    = itopk_indices[ii];
     int is_invalid   = 0;
     int is_candidate = 0;
     if (index == invalid_index) {
@@ -95,68 +97,16 @@ RAFT_DEVICE_INLINE_FUNCTION void pickup_next_parent(
       int flag_done = 0;
       if (is_candidate && candidate_id == k) {
         is_candidate = 0;
-        // 
-        if (hashmap::search_and_insert<INDEX_T, 1>(hash_ptr, hash_bitlen, index)) {
-          // Use this candidate as next parent
-          index |= index_msb_1_mask;  // set most significant bit as used node
-          if (i < itopk_size) {
-            next_parent_indices[0] = i;
-            itopk_indices[i]       = index;
-          } else {
-            next_parent_indices[0] = j;
-            // Move the next parent node from i-th position to j-th position
-            itopk_indices[j]   = index;
-            itopk_distances[j] = itopk_distances[i];
-            itopk_indices[i]   = invalid_index;
-            itopk_distances[i] = utils::get_max_value<DISTANCE_T>();
-          }
-          flag_done = 1;
-        } else {
-          // Deactivate the node since it has been used by other CTA.
-          itopk_indices[i]   = invalid_index;
-          itopk_distances[i] = utils::get_max_value<DISTANCE_T>();
-          is_invalid         = 1;
-        }
+        // Use this candidate as next parent
+        index |= index_msb_1_mask;  // set most significant bit as used node
+        next_parent_indices[0] = i;
+        itopk_indices[ii]      = index;
+        flag_done              = 1;
       }
       if (__any_sync(0xffffffff, (flag_done > 0))) { return; }
     }
-    if (i < itopk_size) {
-      j = 31 - __clz(__ballot_sync(0xffffffff, is_invalid));
-      if (j < 0) { return; }
-    }
-  }
-}
-
-template <unsigned MAX_ELEMENTS, class INDEX_T>
-RAFT_DEVICE_INLINE_FUNCTION void topk_by_bitonic_sort(float* distances,  // [num_elements]
-                                                      INDEX_T* indices,  // [num_elements]
-                                                      const uint32_t num_elements)
-{
-  const unsigned warp_id = threadIdx.x / 32;
-  if (warp_id > 0) { return; }
-  const unsigned lane_id = threadIdx.x % 32;
-  constexpr unsigned N   = (MAX_ELEMENTS + 31) / 32;
-  float key[N];
-  INDEX_T val[N];
-  for (unsigned i = 0; i < N; i++) {
-    unsigned j = lane_id + (32 * i);
-    if (j < num_elements) {
-      key[i] = distances[j];
-      val[i] = indices[j];
-    } else {
-      key[i] = utils::get_max_value<float>();
-      val[i] = ~static_cast<INDEX_T>(0);
-    }
-  }
-  /* Warp Sort */
-  bitonic::warp_sort<float, INDEX_T, N>(key, val);
-  /* Store sorted results */
-  for (unsigned i = 0; i < N; i++) {
-    unsigned j = (N * lane_id) + i;
-    if (j < num_elements) {
-      distances[j] = key[i];
-      indices[j]   = val[i];
-    }
+    j = 31 - __clz(__ballot_sync(0xffffffff, is_invalid));
+    if (j < 0) { return; }
   }
 }
 
@@ -165,7 +115,10 @@ RAFT_DEVICE_INLINE_FUNCTION void topk_by_bitonic_sort(float* distances,  // [num
 //
 // a warp for a distance computation
 //
-template <std::uint32_t MAX_ELEMENTS,
+template <TopKSortType sort_type,
+          uint32_t MAX_ITOPK,
+          uint32_t MAX_CANDIDATES,
+          uint32_t MAX_ELEMENTS,
           class DATASET_DESCRIPTOR_T,
           class SAMPLE_FILTER_T,
           class VisitedTable>
@@ -245,7 +198,6 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
   // |<---        result_buffer_size_32                 --->|
   const auto result_buffer_size    = itopk_size + graph_degree;
   const auto result_buffer_size_32 = raft::round_up_safe<uint32_t>(result_buffer_size, 32);
-  assert(result_buffer_size_32 <= MAX_ELEMENTS);
 
   // Set smem working buffer for the distance calculation
   dataset_desc = dataset_desc->setup_workspace(smem, queries_ptr, query_id);
@@ -257,9 +209,14 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
   auto* __restrict__ parent_indices_buffer = visited_table.setup_table(
     reinterpret_cast<INDEX_T*>(result_distances_buffer + result_buffer_size_32));
   auto* __restrict__ result_position = reinterpret_cast<int*>(parent_indices_buffer + 1);
+  auto* __restrict__ topk_ws         = reinterpret_cast<std::uint32_t*>(result_position + 1);
+  auto* __restrict__ smem_work_ptr   = reinterpret_cast<std::uint32_t*>(topk_ws + 3);
+
+  if (threadIdx.x == 0) { topk_ws[0] = ~0u; }
 
   constexpr INDEX_T invalid_index    = ~static_cast<INDEX_T>(0);
   constexpr INDEX_T index_msb_1_mask = utils::gen_index_msb_1_mask<INDEX_T>::value;
+  constexpr uint32_t search_width    = 1;
 
   for (unsigned i = threadIdx.x; i < result_buffer_size_32; i += blockDim.x) {
     result_indices_buffer[i]   = invalid_index;
@@ -300,10 +257,10 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
   cooperative_groups::grid_group grid = cooperative_groups::this_grid();
   grid.sync();
 
-  uint32_t iter = 0;
+  const INDEX_T warp_id = threadIdx.x / warp_size() + blockIdx.x * (blockDim.x / warp_size());
+  uint32_t iter         = 0;
   while (1) {
     DEBUG_PRINTF("iter %u", iter);
-    INDEX_T warp_id = threadIdx.x / warp_size() + blockIdx.x * (blockDim.x / warp_size());
     // lead lane store the result to immediate gmem buffer
     if (threadIdx.x % warp_size() == 0 && warp_id < graph_degree) {
       candidate_distances_buffer[warp_id] = warp_result_distance;
@@ -326,10 +283,58 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
                         __FILE__,
                         __LINE__,
                         iter);
-    if (threadIdx.x < 32) {
-      // [1st warp] Topk with bitonic sort
-      topk_by_bitonic_sort<MAX_ELEMENTS, INDEX_T>(
-        result_distances_buffer, result_indices_buffer, result_buffer_size_32);
+    // sort
+    if constexpr (sort_type == TopKSortType::BITONIC_SORT_MERGE) {
+      // [Notice]
+      // It is good to use multiple warps in topk_by_bitonic_sort_and_merge() when
+      // batch size is small (short-latency), but it might not be always good
+      // when batch size is large (high-throughput).
+      // topk_by_bitonic_sort_and_merge() consists of two operations:
+      // if MAX_CANDIDATES is greater than 128, the first operation uses two warps;
+      // if MAX_ITOPK is greater than 256, the second operation used two warps.
+      const unsigned multi_warps_1 = ((blockDim.x >= 64) && (MAX_CANDIDATES > 128)) ? 1 : 0;
+      const unsigned multi_warps_2 = ((blockDim.x >= 64) && (MAX_ITOPK > 256)) ? 1 : 0;
+
+      // topk with bitonic sort
+      _CLK_START();
+      bool first_iter = (iter == 0);
+      topk_by_bitonic_sort_and_merge<MAX_ITOPK, MAX_CANDIDATES, INDEX_T>(
+        result_distances_buffer,
+        result_indices_buffer,
+        itopk_size,
+        result_distances_buffer + itopk_size,
+        result_indices_buffer + itopk_size,
+        search_width * graph_degree,
+        topk_ws,
+        first_iter,
+        multi_warps_1,
+        multi_warps_2);
+      _CLK_REC(clk_topk);
+#ifdef _GRAPH_QUALITY_ANALYSIS
+      if (METRIC_THREAD_COND()) { atomicAdd(&my_anns_v1_metrics->counter_topk_bitonic_sort, 1UL); }
+#endif
+    } else if (sort_type == TopKSortType::RADIX_SORT) {
+      _CLK_START();
+      // topk with radix block sort
+      single_cta_search::topk_by_radix_sort<MAX_ITOPK, INDEX_T>{}(
+        itopk_size,
+        gridDim.x,
+        result_buffer_size,
+        reinterpret_cast<std::uint32_t*>(result_distances_buffer),
+        result_indices_buffer,
+        reinterpret_cast<std::uint32_t*>(result_distances_buffer),
+        result_indices_buffer,
+        nullptr,
+        topk_ws,
+        true,
+        smem_work_ptr);
+      _CLK_REC(clk_topk);
+    } else if (sort_type == TopKSortType::BITONIC_SORT) {
+      if (threadIdx.x < 32) {
+        // [1st warp] Topk with bitonic sort
+        topk_by_bitonic_sort<MAX_ELEMENTS, INDEX_T>(
+          result_distances_buffer, result_indices_buffer, result_buffer_size_32);
+      }
     }
     __syncthreads();
 
@@ -353,14 +358,8 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
     _CLK_START();
     if (threadIdx.x < 32) {
       // [1st warp] Pick up a next parent
-      pickup_next_parent<INDEX_T, DISTANCE_T>(parent_indices_buffer,
-                                              result_indices_buffer,
-                                              result_distances_buffer,
-                                              visited_table.gmem_table,
-                                              visited_table.gmem_bitlen);
-    } else {
-      // [Other warps] Reset visited hashmap
-      hashmap::init<INDEX_T>(visited_table.smem_table, visited_table.smem_bitlen, 32);
+      pickup_next_parent<sort_type, INDEX_T, DISTANCE_T>(
+        parent_indices_buffer, result_indices_buffer, result_distances_buffer, itopk_size);
     }
     __syncthreads();
 
@@ -381,22 +380,6 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
 #ifdef _GRAPH_QUALITY_ANALYSIS
     auto clk_insert_hashmap_start = clock64();
 #endif
-    DEBUG_PRINTF("iter %u, begin hashmap insert", iter);
-    for (unsigned i = threadIdx.x; i < result_buffer_size_32; i += blockDim.x) {
-      INDEX_T index = result_indices_buffer[i];
-      if (index == invalid_index) { continue; }
-      if ((i >= itopk_size) && (index & index_msb_1_mask)) {
-        // Remove nodes kicked out of the itopk list from the traversed hash table.
-        hashmap::remove<INDEX_T>(
-          visited_table.gmem_table, visited_table.gmem_bitlen, index & ~index_msb_1_mask);
-        result_indices_buffer[i]   = invalid_index;
-        result_distances_buffer[i] = utils::get_max_value<DISTANCE_T>();
-      } else {
-        // Restore visited hashmap by putting nodes on result buffer in it.
-        index &= ~index_msb_1_mask;
-        hashmap::insert(visited_table.smem_table, visited_table.smem_bitlen, index);
-      }
-    }
     // Initialize buffer for compute_distance_to_child_nodes.
     if (threadIdx.x == blockDim.x - 1) { result_position[0] = result_buffer_size_32; }
     __syncthreads();
@@ -488,8 +471,11 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
   // Output search results (1st thread block only).
   if (blockIdx.x == 0) {
     for (std::uint32_t i = threadIdx.x; i < topk; i += blockDim.x) {
-      // if (TOPK_BY_BITONIC_SORT) { ii = device::swizzling(i); }
-      if (result_distances_ptr != nullptr) { result_distances_ptr[i] = result_distances_buffer[i]; }
+      unsigned ii = i;
+      if (sort_type == TopKSortType::BITONIC_SORT_MERGE) { ii = device::swizzling(i); }
+      if (result_distances_ptr != nullptr) {
+        result_distances_ptr[i] = result_distances_buffer[ii];
+      }
       result_indices_ptr[i] =
         result_indices_buffer[i] & ~index_msb_1_mask;  // clear most significant bit
     }
@@ -541,19 +527,116 @@ struct search_kernel_config {
   // Search kernel function type. Note that the actual values for the template value
   // parameters do not matter, because they are not part of the function signature. The
   // second to fourth value parameters will be selected by the choose_* functions below.
-  using kernel_t =
-    decltype(&search_kernel<128, DATASET_DESCRIPTOR_T, SAMPLE_FILTER_T, VisitedTable>);
+  using kernel_t = decltype(&search_kernel<TopKSortType::BITONIC_SORT_MERGE,
+                                           32,
+                                           32,
+                                           0,
+                                           DATASET_DESCRIPTOR_T,
+                                           SAMPLE_FILTER_T,
+                                           VisitedTable>);
 
   static auto choose_buffer_size(unsigned result_buffer_size, unsigned block_size) -> kernel_t
   {
     if (result_buffer_size <= 64) {
-      return search_kernel<64, DATASET_DESCRIPTOR_T, SAMPLE_FILTER_T, VisitedTable>;
+      return search_kernel<TopKSortType::BITONIC_SORT,
+                           0,
+                           0,
+                           64,
+                           DATASET_DESCRIPTOR_T,
+                           SAMPLE_FILTER_T,
+                           VisitedTable>;
     } else if (result_buffer_size <= 128) {
-      return search_kernel<128, DATASET_DESCRIPTOR_T, SAMPLE_FILTER_T, VisitedTable>;
+      return search_kernel<TopKSortType::BITONIC_SORT,
+                           0,
+                           0,
+                           128,
+                           DATASET_DESCRIPTOR_T,
+                           SAMPLE_FILTER_T,
+                           VisitedTable>;
     } else if (result_buffer_size <= 256) {
-      return search_kernel<256, DATASET_DESCRIPTOR_T, SAMPLE_FILTER_T, VisitedTable>;
+      return search_kernel<TopKSortType::BITONIC_SORT,
+                           0,
+                           0,
+                           256,
+                           DATASET_DESCRIPTOR_T,
+                           SAMPLE_FILTER_T,
+                           VisitedTable>;
     }
     THROW("Result buffer size %u larger than max buffer size %u", result_buffer_size, 256);
+  }
+
+  template <unsigned MAX_CANDIDATES, TopKSortType sort_type>
+  static auto choose_search_kernel(unsigned itopk_size) -> kernel_t
+  {
+    if (itopk_size <= 64) {
+      return search_kernel<sort_type,
+                           64,
+                           MAX_CANDIDATES,
+                           0,
+                           DATASET_DESCRIPTOR_T,
+                           SAMPLE_FILTER_T,
+                           VisitedTable>;
+    } else if (itopk_size <= 128) {
+      return search_kernel<sort_type,
+                           128,
+                           MAX_CANDIDATES,
+                           0,
+                           DATASET_DESCRIPTOR_T,
+                           SAMPLE_FILTER_T,
+                           VisitedTable>;
+    } else if (itopk_size <= 256) {
+      return search_kernel<sort_type,
+                           256,
+                           MAX_CANDIDATES,
+                           0,
+                           DATASET_DESCRIPTOR_T,
+                           SAMPLE_FILTER_T,
+                           VisitedTable>;
+    } else if (itopk_size <= 512) {
+      return search_kernel<sort_type,
+                           512,
+                           MAX_CANDIDATES,
+                           0,
+                           DATASET_DESCRIPTOR_T,
+                           SAMPLE_FILTER_T,
+                           VisitedTable>;
+    }
+    THROW("No kernel for parametels itopk_size %u, max_candidates %u", itopk_size, MAX_CANDIDATES);
+  }
+
+  static auto choose_itopk_and_max_candidates(unsigned itopk_size,
+                                              unsigned num_itopk_candidates,
+                                              unsigned block_size) -> kernel_t
+  {
+    if (num_itopk_candidates <= 64) {
+      // use bitonic sort based topk
+      return choose_search_kernel<64, TopKSortType::BITONIC_SORT_MERGE>(itopk_size);
+    } else if (num_itopk_candidates <= 128) {
+      return choose_search_kernel<128, TopKSortType::BITONIC_SORT_MERGE>(itopk_size);
+    } else if (num_itopk_candidates <= 256) {
+      return choose_search_kernel<256, TopKSortType::BITONIC_SORT_MERGE>(itopk_size);
+    } else {
+      // Radix-based topk is used
+      // constexpr unsigned max_candidates = 32;  // to avoid build failure
+      if (itopk_size <= 256) {
+        return search_kernel<TopKSortType::RADIX_SORT,
+                             256,
+                             0,
+                             DATASET_DESCRIPTOR_T,
+                             SAMPLE_FILTER_T,
+                             VisitedTable>;
+      } else if (itopk_size <= 512) {
+        return search_kernel<TopKSortType::RADIX_SORT,
+                             512,
+                             0,
+                             DATASET_DESCRIPTOR_T,
+                             SAMPLE_FILTER_T,
+                             VisitedTable>;
+      }
+    }
+    THROW("No kernel for parametels itopk_size %u, num_itopk_candidates %u",
+          itopk_size,
+          num_itopk_candidates);
   }
 };
 
@@ -570,6 +653,7 @@ void select_and_run(const dataset_descriptor_host<DataT, IndexT, DistanceT>& dat
                     uint32_t* num_executed_iterations,  // [num_queries,]
                     const search_params& ps,
                     uint32_t topk,
+                    uint32_t num_itopk_candidates,
                     // multi_cta_search (params struct)
                     uint32_t block_size,  //
                     uint32_t result_buffer_size,
@@ -585,42 +669,52 @@ void select_and_run(const dataset_descriptor_host<DataT, IndexT, DistanceT>& dat
 #endif
                     cudaStream_t stream)
 {
-  auto kernel = search_kernel_config<
-    dataset_descriptor_base_t<DataT, IndexT, DistanceT>,
-    SampleFilterT,
-    visited_table::SharedGlobalMemHashtable<IndexT>>::choose_buffer_size(result_buffer_size,
-                                                                         block_size);
+  // auto kernel = search_kernel_config<
+  //   dataset_descriptor_base_t<DataT, IndexT, DistanceT>,
+  //   SampleFilterT,
+  //   visited_table::GlobalBitmap<IndexT>>::choose_itopk_and_max_candidates(ps.itopk_size,
+  //                                                                         num_itopk_candidates,
+  //                                                                         block_size);
+  auto kernel =
+    search_kernel_config<dataset_descriptor_base_t<DataT, IndexT, DistanceT>,
+                         SampleFilterT,
+                         visited_table::GlobalBitmap<IndexT>>::choose_buffer_size(result_buffer_size,
+
+                                                                                  block_size);
 
   RAFT_CUDA_TRY(
     cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size));
   // Initialize hash table
-  const uint32_t traversed_hash_size = hashmap::get_size(traversed_hash_bitlen);
-  set_value_batch(traversed_hashmap_ptr,
-                  traversed_hash_size,
-                  ~static_cast<IndexT>(0),
-                  traversed_hash_size,
-                  num_queries,
+  // const uint32_t traversed_hash_size = hashmap::get_size(traversed_hash_bitlen);
+  cudaMemsetAsync(traversed_hashmap_ptr,
+                  visited_table::GlobalBitmap<IndexT>::init_value,
+                  visited_table::GlobalBitmap<IndexT>::default_size * sizeof(IndexT),
                   stream);
+  // set_value_batch(traversed_hashmap_ptr,
+  //                 traversed_hash_size,
+  //                 visited_table::GlobalBitmap<IndexT>::init_value,
+  //                 traversed_hash_size,
+  //                 num_queries,
+  //                 stream);
+
+  auto graph_degree = graph.extent(1);
 
   RAFT_EXPECTS(block_size % warp_size() == 0, "block_size must be a multiple of warp size");
   RAFT_EXPECTS(block_size > 32, "block must has more than 1 warp");
-  RAFT_EXPECTS(graph.extent(1) % (block_size / 32) == 0,
+  // number of parents per warp
+  const auto parents_per_block = block_size / warp_size();
+  RAFT_EXPECTS(graph_degree % parents_per_block == 0,
                "graph.extent(1) must be a multiple of block_size / 32");
 
+  dim3 grid_dims(graph_degree / parents_per_block, num_queries, 1);
   dim3 block_dims(block_size, 1, 1);
-  dim3 grid_dims(graph.extent(1) / (block_size / 32), num_queries, 1);
   RAFT_LOG_DEBUG("Launching kernel with %u threads, (%u, %u) blocks %u smem",
                  block_size,
                  num_cta_per_query,
                  num_queries,
                  smem_size);
-  visited_table::SharedGlobalMemHashtable<IndexT> visited_table{
-    .smem_table  = (IndexT*)nullptr,
-    .smem_bitlen = visited_hash_bitlen,
-    .gmem_table  = traversed_hashmap_ptr,
-    .gmem_bitlen = (uint32_t)traversed_hash_bitlen};
+  visited_table::GlobalBitmap<IndexT> visited_table{.gmem_bitmap = traversed_hashmap_ptr};
 
-  auto graph_degree = graph.extent(1);
   auto* dataset_ptr = dataset_desc.dev_ptr(stream);
   auto* graph_ptr   = graph.data_handle();
   void* args[]      = {(void*)&topk_indices_ptr,

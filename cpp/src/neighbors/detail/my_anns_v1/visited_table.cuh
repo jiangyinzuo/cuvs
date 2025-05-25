@@ -98,6 +98,25 @@ struct SharedGlobalMemHashtable {
 };
 
 template <typename IdxT>
+struct GlobalBitmap {
+  static constexpr uint32_t init_value = 0;
+  static constexpr uint32_t default_size = 1'000'000;
+
+  /**
+   * @return true if the key already exists in the table, false otherwise
+   */
+  RAFT_DEVICE_INLINE_FUNCTION bool search_and_try_insert(const IdxT key)
+  {
+    uint32_t old = atomicOr(&gmem_bitmap[key / 32], 1 << (key % 32));
+    return (old & (1 << (key % 32))) != 0;
+  }
+
+  RAFT_DEVICE_INLINE_FUNCTION IdxT* setup_table(IdxT* smem) { return smem; }
+
+  uint32_t* gmem_bitmap;
+};
+
+template <typename IdxT>
 struct Cache {
   /**
    * @return true if the key already exists in the table, false otherwise
@@ -141,13 +160,9 @@ struct Cache {
 
 template <typename IdxT>
 struct AlwaysUnvisited {
-  RAFT_DEVICE_INLINE_FUNCTION bool search_and_try_insert(const IdxT key) {
-    return false;
-  }
+  RAFT_DEVICE_INLINE_FUNCTION bool search_and_try_insert(const IdxT key) { return false; }
 
-  RAFT_DEVICE_INLINE_FUNCTION IdxT* setup_table(IdxT* smem) {
-    return smem;
-  }
+  RAFT_DEVICE_INLINE_FUNCTION IdxT* setup_table(IdxT* smem) { return smem; }
 };
 
 }  // namespace visited_table

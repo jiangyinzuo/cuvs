@@ -28,7 +28,7 @@ namespace cuvs::neighbors::my_anns_v1::detail::warp_distance_search {
     raft::device_matrix_view<const IndexT, int64_t, raft::row_major> graph,   \
     IndexT* topk_indices_ptr,                                                 \
     DistanceT* topk_distances_ptr,                                            \
-    DistanceT* candidate_distances_buffer,                                        \
+    DistanceT* candidate_distances_buffer,                                    \
     IndexT* candidate_indices_buffer,                                         \
     const DataT* queries_ptr,                                                 \
     uint32_t num_queries,                                                     \
@@ -36,6 +36,7 @@ namespace cuvs::neighbors::my_anns_v1::detail::warp_distance_search {
     uint32_t* num_executed_iterations,                                        \
     const search_params& ps,                                                  \
     uint32_t topk,                                                            \
+    uint32_t num_itopk_candidates,                                            \
     uint32_t block_size,                                                      \
     uint32_t result_buffer_size,                                              \
     uint32_t smem_size,                                                       \
@@ -54,7 +55,7 @@ namespace cuvs::neighbors::my_anns_v1::detail::warp_distance_search {
     raft::device_matrix_view<const IndexT, int64_t, raft::row_major> graph,   \
     IndexT* topk_indices_ptr,                                                 \
     DistanceT* topk_distances_ptr,                                            \
-    DistanceT* candidate_distances_buffer,                                        \
+    DistanceT* candidate_distances_buffer,                                    \
     IndexT* candidate_indices_buffer,                                         \
     const DataT* queries_ptr,                                                 \
     uint32_t num_queries,                                                     \
@@ -62,6 +63,7 @@ namespace cuvs::neighbors::my_anns_v1::detail::warp_distance_search {
     uint32_t* num_executed_iterations,                                        \
     const search_params& ps,                                                  \
     uint32_t topk,                                                            \
+    uint32_t num_itopk_candidates,                                            \
     uint32_t block_size,                                                      \
     uint32_t result_buffer_size,                                              \
     uint32_t smem_size,                                                       \

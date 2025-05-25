@@ -314,7 +314,7 @@ RAFT_DEVICE_INLINE_FUNCTION void compute_distance_to_one_child_node_one_warp(
                                              ? compute_distance(args, result_child_index)
                                              : (lead_lane ? raft::upper_bound<DistanceT>() : 0),
                                            team_size_bits);
-  __syncwarp();
+  // __syncwarp();
   if constexpr (std::is_same_v<DistanceT, float>) {
     DEBUG_PRINTF(
       "team sum end, child_index=%u distance=%f\n", result_child_index, result_child_distance);
