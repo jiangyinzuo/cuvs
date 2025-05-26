@@ -22,12 +22,13 @@
 #include "entry_points_policy.cuh"
 #include "graph_analysis_macros.h"
 #include "hashmap.hpp"
+#include "pickup_next_parents.cuh"
 #include "search_plan.cuh"
+#include "sort.cuh"
 #include "topk_by_radix.cuh"
 #include "topk_for_my_anns_v1/topk.h"  // TODO replace with raft topk
 #include "utils.hpp"
 #include "visited_table.cuh"
-#include "sort.cuh"
 
 #include <cuvs/distance/distance.hpp>
 #include <raft/core/device_mdspan.hpp>
@@ -62,50 +63,6 @@
 
 namespace cuvs::neighbors::my_anns_v1::detail {
 namespace single_cta_search {
-
-template <unsigned TOPK_BY_BITONIC_SORT, class INDEX_T>
-RAFT_DEVICE_INLINE_FUNCTION void pickup_next_parents(std::uint32_t* const terminate_flag,
-                                                     INDEX_T* const next_parent_indices,
-                                                     INDEX_T* const internal_topk_indices,
-                                                     const std::size_t internal_topk_size,
-                                                     const std::uint32_t search_width)
-{
-  constexpr INDEX_T index_msb_1_mask = utils::gen_index_msb_1_mask<INDEX_T>::value;
-  // if (threadIdx.x >= 32) return;
-
-  for (std::uint32_t i = threadIdx.x; i < search_width; i += 32) {
-    next_parent_indices[i] = utils::get_max_value<INDEX_T>();
-  }
-  std::uint32_t itopk_max = internal_topk_size;
-  if (itopk_max % 32) { itopk_max += 32 - (itopk_max % 32); }
-  std::uint32_t num_new_parents = 0;
-  for (std::uint32_t j = threadIdx.x; j < itopk_max; j += 32) {
-    std::uint32_t jj = j;
-    if (TOPK_BY_BITONIC_SORT) { jj = device::swizzling(j); }
-    INDEX_T index;
-    int new_parent = 0;
-    if (j < internal_topk_size) {
-      index = internal_topk_indices[jj];
-      if ((index & index_msb_1_mask) == 0) {  // check if most significant bit is set
-        new_parent = 1;
-      }
-    }
-    const std::uint32_t ballot_mask = __ballot_sync(0xffffffff, new_parent);
-    if (new_parent) {
-      const auto i = __popc(ballot_mask & ((1 << threadIdx.x) - 1)) + num_new_parents;
-      if (i < search_width) {
-        next_parent_indices[i] = jj;
-        // set most significant bit as used node
-        internal_topk_indices[jj] |= index_msb_1_mask;
-      }
-    }
-    num_new_parents += __popc(ballot_mask);
-    if (num_new_parents >= search_width) { break; }
-  }
-  if (threadIdx.x == 0 && (num_new_parents == 0)) { *terminate_flag = 1; }
-}
-
-
 
 // This function move the invalid index element to the end of the itopk list.
 // Require : array_length % 32 == 0 && The invalid entry is only one.
@@ -278,7 +235,9 @@ __device__ void search_core(
     // pick up next parents
     if (threadIdx.x < 32) {
       _CLK_START();
-      pickup_next_parents<TOPK_BY_BITONIC_SORT, INDEX_T>(
+      pickup_next_parents<TOPK_BY_BITONIC_SORT ? TopKSortType::BITONIC_SORT_MERGE
+                                               : TopKSortType::RADIX_SORT,
+                          INDEX_T>(
         terminate_flag, parent_list_buffer, result_indices_buffer, internal_topk, search_width);
       _CLK_REC(clk_pickup_parents);
 #ifdef _GRAPH_QUALITY_ANALYSIS
@@ -337,6 +296,8 @@ __device__ void search_core(
 
   std::uint32_t iter = 0;
   while (1) {
+    const std::uint32_t neighbors_to_compute =
+      0 < iter && iter < 10 ? graph_degree / 2 : graph_degree;
     // sort
     if constexpr (TOPK_BY_BITONIC_SORT) {
       // [Notice]
@@ -403,7 +364,7 @@ __device__ void search_core(
         internal_topk,
         result_distances_buffer + internal_topk,
         result_indices_buffer + internal_topk,
-        search_width * graph_degree,
+        search_width * neighbors_to_compute,
         topk_ws,
         first_iter,
         multi_warps_1,
@@ -419,7 +380,7 @@ __device__ void search_core(
       topk_by_radix_sort<MAX_ITOPK, INDEX_T>{}(
         internal_topk,
         gridDim.x,
-        result_buffer_size,
+        internal_topk + (search_width * graph_degree),
         reinterpret_cast<std::uint32_t*>(result_distances_buffer),
         result_indices_buffer,
         reinterpret_cast<std::uint32_t*>(result_distances_buffer),
@@ -452,7 +413,9 @@ __device__ void search_core(
     // pick up next parents
     if (threadIdx.x < 32) {
       _CLK_START();
-      pickup_next_parents<TOPK_BY_BITONIC_SORT, INDEX_T>(
+      pickup_next_parents<TOPK_BY_BITONIC_SORT ? TopKSortType::BITONIC_SORT_MERGE
+                                               : TopKSortType::RADIX_SORT,
+                          INDEX_T>(
         terminate_flag, parent_list_buffer, result_indices_buffer, internal_topk, search_width);
       _CLK_REC(clk_pickup_parents);
 #ifdef _GRAPH_QUALITY_ANALYSIS
@@ -482,7 +445,7 @@ __device__ void search_core(
                                             result_distances_buffer + internal_topk,
                                             *dataset_desc,
                                             knn_graph,
-                                            graph_degree,
+                                            neighbors_to_compute,
                                             visited_table,
                                             parent_list_buffer,
                                             result_indices_buffer,
