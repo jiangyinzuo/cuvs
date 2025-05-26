@@ -22,6 +22,7 @@
 #include "device_common.cuh"
 #include "graph_analysis_macros.h"
 #include "hashmap.hpp"
+#include "pickup_next_parents.cuh"
 #include "search_plan.cuh"
 #include "sort.cuh"
 #include "topk_by_radix.cuh"
@@ -62,54 +63,6 @@ namespace warp_distance_search {
 
 // #define _CLK_BREAKDOWN
 
-template <TopKSortType sort_type, class INDEX_T, class DISTANCE_T>
-RAFT_DEVICE_INLINE_FUNCTION void pickup_next_parent(
-  INDEX_T* const next_parent_indices,
-  INDEX_T* const itopk_indices,       // [internal_topk_size]
-  DISTANCE_T* const itopk_distances,  // [internal_topk_size]
-  const std::size_t internal_topk_size)
-{
-  constexpr INDEX_T index_msb_1_mask = utils::gen_index_msb_1_mask<INDEX_T>::value;
-  constexpr INDEX_T invalid_index    = ~static_cast<INDEX_T>(0);
-
-  const unsigned warp_id = threadIdx.x / warp_size();
-  if (warp_id > 0) { return; }
-  if (threadIdx.x == 0) { next_parent_indices[0] = invalid_index; }
-  __syncwarp();
-
-  int j = -1;
-  for (unsigned i = threadIdx.x; i < internal_topk_size; i += warp_size()) {
-    std::uint32_t ii = i;
-    if (sort_type == TopKSortType::BITONIC_SORT_MERGE) { ii = device::swizzling(i); }
-    INDEX_T index    = itopk_indices[ii];
-    int is_invalid   = 0;
-    int is_candidate = 0;
-    if (index == invalid_index) {
-      is_invalid = 1;
-    } else if (index & index_msb_1_mask) {
-    } else {
-      is_candidate = 1;
-    }
-
-    const auto ballot_mask  = __ballot_sync(0xffffffff, is_candidate);
-    const auto candidate_id = __popc(ballot_mask & ((1 << threadIdx.x) - 1));
-    for (int k = 0; k < __popc(ballot_mask); k++) {
-      int flag_done = 0;
-      if (is_candidate && candidate_id == k) {
-        is_candidate = 0;
-        // Use this candidate as next parent
-        index |= index_msb_1_mask;  // set most significant bit as used node
-        next_parent_indices[0] = i;
-        itopk_indices[ii]      = index;
-        flag_done              = 1;
-      }
-      if (__any_sync(0xffffffff, (flag_done > 0))) { return; }
-    }
-    j = 31 - __clz(__ballot_sync(0xffffffff, is_invalid));
-    if (j < 0) { return; }
-  }
-}
-
 // #undef NDEBUG
 
 //
@@ -141,6 +94,7 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
   const typename DATASET_DESCRIPTOR_T::INDEX_T* seed_ptr,  // [num_queries, num_seeds]
   const uint32_t num_seeds,
   const uint32_t itopk_size,
+  const uint32_t search_width,
   const uint32_t min_iteration,
   const uint32_t max_iteration,
   uint32_t* const num_executed_iterations, /* stats */
@@ -191,12 +145,12 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
 
   assert(itopk_size % 32 == 0);
   // Layout of result_buffer
-  // +----------------+---------+---------------------------+
-  // | internal_top_k | padding | neighbors of parent nodes |
-  // | <itopk_size>   | upto 32 | <graph_degree>            |
-  // +----------------+---------+---------------------------+
-  // |<---        result_buffer_size_32                 --->|
-  const auto result_buffer_size    = itopk_size + graph_degree;
+  // +----------------+---------+------------------------------------------+
+  // | internal_top_k | padding | neighbors of parent nodes                |
+  // | <itopk_size>   | upto 32 | <search_width * graph_degree>            |
+  // +----------------+---------+------------------------------------------+
+  // |<---                 result_buffer_size_32                       --->|
+  const auto result_buffer_size    = itopk_size + search_width * graph_degree;
   const auto result_buffer_size_32 = raft::round_up_safe<uint32_t>(result_buffer_size, 32);
 
   // Set smem working buffer for the distance calculation
@@ -208,15 +162,18 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
     reinterpret_cast<DISTANCE_T*>(result_indices_buffer + result_buffer_size_32);
   auto* __restrict__ parent_indices_buffer = visited_table.setup_table(
     reinterpret_cast<INDEX_T*>(result_distances_buffer + result_buffer_size_32));
-  auto* __restrict__ result_position = reinterpret_cast<int*>(parent_indices_buffer + 1);
+  auto* __restrict__ result_position = reinterpret_cast<int*>(parent_indices_buffer + search_width);
   auto* __restrict__ topk_ws         = reinterpret_cast<std::uint32_t*>(result_position + 1);
-  auto* __restrict__ smem_work_ptr   = reinterpret_cast<std::uint32_t*>(topk_ws + 3);
+  auto* __restrict__ terminate_flag  = reinterpret_cast<INDEX_T*>(topk_ws + 3);
+  auto* __restrict__ smem_work_ptr   = reinterpret_cast<std::uint32_t*>(terminate_flag + 1);
 
-  if (threadIdx.x == 0) { topk_ws[0] = ~0u; }
+  if (threadIdx.x == 0) {
+    terminate_flag[0] = 0;
+    topk_ws[0]        = ~0u;
+  }
 
   constexpr INDEX_T invalid_index    = ~static_cast<INDEX_T>(0);
   constexpr INDEX_T index_msb_1_mask = utils::gen_index_msb_1_mask<INDEX_T>::value;
-  constexpr uint32_t search_width    = 1;
 
   for (unsigned i = threadIdx.x; i < result_buffer_size_32; i += blockDim.x) {
     result_indices_buffer[i]   = invalid_index;
@@ -259,6 +216,7 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
 
   const INDEX_T warp_id = threadIdx.x / warp_size() + blockIdx.x * (blockDim.x / warp_size());
   uint32_t iter         = 0;
+  const bool search_width_is_1 = (search_width == 1);
   while (1) {
     DEBUG_PRINTF("iter %u", iter);
     // lead lane store the result to immediate gmem buffer
@@ -335,7 +293,10 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
         topk_by_bitonic_sort<MAX_ELEMENTS, INDEX_T>(
           result_distances_buffer, result_indices_buffer, result_buffer_size_32);
       }
+    } else {
+      // assert(false);
     }
+
     __syncthreads();
 
     print_result_buffer(result_buffer_size_32,
@@ -357,9 +318,14 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
     DEBUG_PRINTF("iter %u, begin pickup next parent", iter);
     _CLK_START();
     if (threadIdx.x < 32) {
-      // [1st warp] Pick up a next parent
-      pickup_next_parent<sort_type, INDEX_T, DISTANCE_T>(
-        parent_indices_buffer, result_indices_buffer, result_distances_buffer, itopk_size);
+      if (search_width_is_1) {
+        // [1st warp] Pick up a next parent
+        pickup_next_parent<sort_type, INDEX_T, DISTANCE_T>(
+          parent_indices_buffer, result_indices_buffer, result_distances_buffer, itopk_size);
+      } else {
+        pickup_next_parents<sort_type, INDEX_T>(
+          terminate_flag, parent_indices_buffer, result_indices_buffer, itopk_size, search_width);
+      }
     }
     __syncthreads();
 
@@ -375,7 +341,7 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
     if (METRIC_THREAD_COND()) { atomicAdd(&my_anns_v1_metrics->counter_pickup_parents, 1UL); }
 #endif
 
-    if ((parent_indices_buffer[0] == invalid_index) && (iter >= min_iteration)) { break; }
+    if ((*terminate_flag) && (iter >= min_iteration)) { break; }
 
 #ifdef _GRAPH_QUALITY_ANALYSIS
     auto clk_insert_hashmap_start = clock64();
@@ -398,7 +364,7 @@ RAFT_KERNEL __launch_bounds__(1024, 1) search_kernel(
                         __LINE__,
                         iter);
     const AlwaysUnvisited always_unvisited;
-    const auto smem_parent_id = parent_indices_buffer[0];
+    const auto smem_parent_id = parent_indices_buffer[warp_id / graph_degree % search_width];
     if (smem_parent_id != invalid_index) {
       const auto parent_id = result_indices_buffer[smem_parent_id] & ~index_msb_1_mask;
       // Compute the norms between child nodes and query node
@@ -675,12 +641,10 @@ void select_and_run(const dataset_descriptor_host<DataT, IndexT, DistanceT>& dat
   //   visited_table::GlobalBitmap<IndexT>>::choose_itopk_and_max_candidates(ps.itopk_size,
   //                                                                         num_itopk_candidates,
   //                                                                         block_size);
-  auto kernel =
-    search_kernel_config<dataset_descriptor_base_t<DataT, IndexT, DistanceT>,
-                         SampleFilterT,
-                         visited_table::GlobalBitmap<IndexT>>::choose_buffer_size(result_buffer_size,
-
-                                                                                  block_size);
+  auto kernel = search_kernel_config<
+    dataset_descriptor_base_t<DataT, IndexT, DistanceT>,
+    SampleFilterT,
+    visited_table::GlobalBitmap<IndexT>>::choose_buffer_size(result_buffer_size, block_size);
 
   RAFT_CUDA_TRY(
     cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size));
@@ -701,12 +665,13 @@ void select_and_run(const dataset_descriptor_host<DataT, IndexT, DistanceT>& dat
 
   RAFT_EXPECTS(block_size % warp_size() == 0, "block_size must be a multiple of warp size");
   RAFT_EXPECTS(block_size > 32, "block must has more than 1 warp");
-  // number of parents per warp
+  // a warp computes a distance (explore a parent node)
   const auto parents_per_block = block_size / warp_size();
   RAFT_EXPECTS(graph_degree % parents_per_block == 0,
                "graph.extent(1) must be a multiple of block_size / 32");
 
-  dim3 grid_dims(graph_degree / parents_per_block, num_queries, 1);
+  // totally `graph_degree * ps.search_width` parents to explore
+  dim3 grid_dims(graph_degree * ps.search_width / parents_per_block, num_queries, 1);
   dim3 block_dims(block_size, 1, 1);
   RAFT_LOG_DEBUG("Launching kernel with %u threads, (%u, %u) blocks %u smem",
                  block_size,
@@ -731,6 +696,7 @@ void select_and_run(const dataset_descriptor_host<DataT, IndexT, DistanceT>& dat
                        (void*)&dev_seed_ptr,
                        (void*)&num_seeds,
                        (void*)&ps.itopk_size,
+                       (void*)&ps.search_width,
                        (void*)&ps.min_iterations,
                        (void*)&ps.max_iterations,
                        (void*)&num_executed_iterations,
@@ -756,6 +722,7 @@ void select_and_run(const dataset_descriptor_host<DataT, IndexT, DistanceT>& dat
   //                                                        dev_seed_ptr,
   //                                                        num_seeds,
   //                                                        ps.itopk_size,
+  //                                                        ps.search_width,
   //                                                        ps.min_iterations,
   //                                                        ps.max_iterations,
   //                                                        num_executed_iterations,

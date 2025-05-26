@@ -142,3 +142,20 @@ groups:
     search:
       itopk: [128]
       search_width: [16]
+  warp_distance:
+    build:
+      graph_degree: [16, 32, 48, 64, 96, 128]
+      intermediate_graph_degree: [16, 32, 48, 64, 96, 128]
+      graph_build_algo: ["NN_DESCENT"]
+    search:
+      # must be multiple of 32
+      # itopk: [128, 256, 512]
+      # itopk: [32, 64]
+      itopk: [32, 64, 128]
+      search_width: [1]
+      # search_width: [1, 2, 4]
+      # 16384: oom
+      num_entry_points: [0]
+      # hash_mode: ["auto", "cache", "always_unvisited"]
+      hash_mode: ["auto"]
+      algo: ["single_cta"]

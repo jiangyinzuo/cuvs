@@ -168,6 +168,7 @@ struct search : public search_plan_impl<DataT, IndexT, DistanceT, SAMPLE_FILTER_
       sizeof(INDEX_T) * search_width +                          // parent_indices_buffer
       sizeof(int) +                                             // result_position
       3 +                                                       // topk_ws
+      1 +                                                       // terminate_flag
       additional_smem_size;
     RAFT_LOG_DEBUG("# smem_size: %u", smem_size);
 
